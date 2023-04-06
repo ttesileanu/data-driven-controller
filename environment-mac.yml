@@ -1,0 +1,26 @@
+name:
+    ddc
+
+channels:
+    - pytorch
+    - conda-forge
+
+dependencies:
+    - python=3.9
+    - pip
+    - black
+    - pytest
+    - numpy
+    - scipy
+    - pandas
+    - matplotlib
+    - seaborn
+    - pytorch
+    - scikit-learn
+    - tqdm
+    - ipykernel
+    - ipywidgets>=7.0,<8.0
+    - jupyter
+     
+    - pip:
+        - pydove
