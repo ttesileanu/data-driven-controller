@@ -1176,7 +1176,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
     )
     ax.plot(output.squeeze())
     ax.set_xlabel("time")
-    ax.set_ylabel(f"observation $y_{{{i + 1}}}$")
+    ax.set_ylabel(f"observation $y$")
     ax.legend(frameon=False)
 
     yl = (controls.min(), controls.max())
