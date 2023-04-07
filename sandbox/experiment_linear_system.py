@@ -1108,7 +1108,7 @@ with dv.FigureManager() as (_, ax):
 
 
 # %% [markdown]
-# #### 2d rotation, state noise, and partial observation
+# #### 2d rotation, observation noise, state noise, and partial observation
 
 # %%
 torch.manual_seed(42)
@@ -1119,6 +1119,7 @@ model = LinearSystem(
     evolution=transfer_mat,
     observation=torch.tensor([[1.0, 0.0]]),
     control=torch.tensor([[1.0], [-0.3]]),
+    observation_noise=torch.tensor([[0.2]]),
     state_noise=torch.tensor([[0.05, 0.0], [0.0, 0.1]]),
     initial_state=torch.tensor([[1.0], [0.5]]),
 )
@@ -1176,6 +1177,93 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
     ax.plot(output.squeeze())
     ax.set_xlabel("time")
     ax.set_ylabel(f"observation $y_{{{i + 1}}}$")
+    ax.legend(frameon=False)
+
+    yl = (controls.min(), controls.max())
+    axs[1].fill_betweenx(
+        yl,
+        [0, 0],
+        2 * [control_start],
+        color="gray",
+        alpha=0.5,
+        edgecolor="none",
+        label="no control",
+    )
+    axs[1].plot(controls.squeeze())
+    axs[1].set_xlabel("time")
+    axs[1].set_ylabel("control")
+    axs[1].legend(frameon=False, loc="lower right")
+
+# %% [markdown]
+# #### 2d rotation, observation noise, state noise, and partial observation
+
+# %%
+torch.manual_seed(42)
+rot_mat = torch.FloatTensor([[np.cos(0.2), np.sin(0.2)], [-np.sin(0.2), np.cos(0.2)]])
+scale_mat = torch.FloatTensor([[1.1, 0.0], [0.0, 0.8]])
+transfer_mat = scale_mat @ rot_mat
+model = LinearSystem(
+    evolution=transfer_mat,
+    observation=torch.tensor([[1.0, 0.0]]),
+    control=torch.tensor([[1.0], [-0.3]]),
+    observation_noise=torch.tensor([[0.2]]),
+    state_noise=torch.tensor([[0.05, 0.0], [0.0, 0.1]]),
+    initial_state=torch.tensor([[1.0], [0.5]]),
+)
+history_length = 25
+control_horizon = 8
+controller = DDController(
+    1,
+    1,
+    history_length,
+    seed_length=2,
+    control_horizon=control_horizon,
+    control_cost=0,
+    target_cost=0.1,
+)
+
+n_steps = 2500
+control = torch.tensor([0.0])
+control_noise = 0.001
+outputs = []
+controls = []
+for k in range(n_steps):
+    # need noise for exploration
+    control = control + control_noise * torch.randn(control.shape)
+    y = model.run(control_plan=control[None, :])
+    y = y[0, :, 0]
+
+    outputs.append(y)
+    controls.append(control)
+
+    controller.feed(y, control)
+    control_plan = controller.plan()
+    control = control_plan[0]
+
+control_start = (
+    controller.history_length + controller.control_horizon + controller.seed_length
+)
+
+outputs = torch.stack(outputs)
+controls = torch.stack(controls)
+
+# %%
+with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
+    ax = axs[0]
+    output = outputs[:, 0]
+    yl = (output.min(), output.max())
+    ax.fill_betweenx(
+        yl,
+        [0, 0],
+        2 * [control_start],
+        color="gray",
+        alpha=0.5,
+        edgecolor="none",
+        label="no control",
+    )
+    ax.plot(output.squeeze())
+    ax.set_xlabel("time")
+    ax.set_ylabel(f"observation $y$")
     ax.legend(frameon=False)
 
     yl = (controls.min(), controls.max())
