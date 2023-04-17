@@ -1,5 +1,7 @@
 import torch
 
+from typing import Tuple
+
 
 class DDController:
     def __init__(
@@ -14,6 +16,9 @@ class DDController:
         target_cost: float = 0.01,
         control_cost: float = 0.01,
         control_sparsity: float = 0.0,
+        method: str = "lstsq",
+        gd_lr: float = 0.01,
+        gd_iterations: int = 50,
     ):
         """Data-drive controller.
 
@@ -73,8 +78,13 @@ class DDController:
         :param control_match_cost: multiplier for matching seed control values
         :param target_cost: multiplier for minimizing observation values at horizon
         :param control_cost: multiplier for minimizing overall control magnitude
-        :param control_sparsity: amount of sparsity-inducing, L1 regularizer; NOT YET
-            IMPLEMENTED
+        :param control_sparsity: amount of sparsity-inducing, L1 regularizer; only works
+            when `method == "gd"`
+        :param method: can be
+            "lstsq":    use `torch.linalg.lstsq`; does not support `control_sparsity`
+            "gd":       gradient descent
+        :param gd_lr: learning rate for `method == "gd"`
+        :param gd_iterations: number of iterantions when `method == "gd"`
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
@@ -86,11 +96,18 @@ class DDController:
         self.target_cost = target_cost
         self.control_cost = control_cost
         self.control_sparsity = control_sparsity
+        self.method = method
+        self.gd_lr = gd_lr
+        self.gd_iterations = gd_iterations
+
         if self.control_sparsity != 0:
-            assert NotImplementedError("control_sparsity not implemented yet")
+            if self.method != "gd":
+                assert ValueError("control_sparsity only works with `method=gd`")
 
         self.observation_history = None
         self.control_history = None
+
+        self._previous_coeffs = None
 
     def feed(self, observation: torch.Tensor, control: torch.Tensor):
         """Register another measurement.
@@ -123,16 +140,39 @@ class DDController:
 
         :return: control plan, shape `(control_horizon, control_dim)`
         """
+        n = self.history_length
+        p = self.seed_length
+        l = self.control_horizon
+        c = self.control_dim
+        if len(self.observation_history) < n + p + l:
+            # not enough data yet
+            return torch.zeros((l, c))
+
+        Z, _, Z_weighted, z_weighted = self.get_hankels()
+
+        if self.method == "lstsq":
+            result = torch.linalg.lstsq(Z_weighted, z_weighted)
+            coeffs = result.solution
+        elif self.method == "gd":
+            U_unk = Z[-l * c :]
+            coeffs = self._solve_gd(Z_weighted, z_weighted, U_unk)
+        else:
+            raise ValueError(f"Unknown method: {self.method}")
+
+        # now solve z = Z alpha
+        z_hat = Z @ coeffs
+
+        return z_hat[-l * c :].reshape((l, c))
+
+    def get_hankels(
+        self,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         p = self.seed_length
         l = self.control_horizon
         n = self.history_length
 
         d = self.observation_dim
         c = self.control_dim
-
-        if len(self.observation_history) < n + p + l:
-            # not enough data yet
-            return torch.zeros((l, c))
 
         obs = self.observation_history
         ctrl = self.control_history
@@ -178,8 +218,38 @@ class DDController:
         z_weighted[2 * p * d : p * (2 * d + c)] *= self.control_match_cost
         # nothing to multiply for [-l * c :] as target u is zero
 
-        # now solve z = Z alpha
-        result = torch.linalg.lstsq(Z_weighted, z_weighted)
-        z_hat = Z @ result.solution
+        return Z, z, Z_weighted, z_weighted
 
-        return z_hat[-l * c :].reshape((l, c))
+    def _solve_gd(
+        self, Z_weighted: torch.Tensor, z_weighted: torch.Tensor, U_unk: torch.Tensor
+    ) -> torch.Tensor:
+        # if self._previous_coeffs is None:
+        #     coeffs = torch.zeros((self.history_length, 1))
+        # else:
+        #     coeffs = torch.vstack((self._previous_coeffs[1:], torch.tensor([[0.0]])))
+        
+        initial = torch.linalg.lstsq(Z_weighted, z_weighted)
+        coeffs = initial.solution
+
+        # TODO: smarter convergence criterion
+        coeffs.requires_grad_()
+        self._loss_curve = []
+        optimizer = torch.optim.SGD([coeffs], lr=self.gd_lr)
+        for i in range(self.gd_iterations):
+            loss_quadratic = 0.5 * torch.sum((Z_weighted @ coeffs - z_weighted) ** 2)
+
+            control_plan = U_unk @ coeffs
+            loss_l1 = self.control_sparsity * control_plan.abs().sum()
+
+            loss = loss_quadratic + loss_l1
+
+            coeffs.grad = None
+            loss.backward()
+
+            optimizer.step()
+
+            self._loss_curve.append(loss.item())
+
+        coeffs = coeffs.detach()
+        self._previous_coeffs = coeffs
+        return coeffs
