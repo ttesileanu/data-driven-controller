@@ -20,7 +20,7 @@ class DDController:
         gd_lr: float = 0.01,
         gd_iterations: int = 50,
     ):
-        """Data-drive controller.
+        """Data-driven controller.
 
         This acts by leveraging the behavioral approach to dynamical systems: a system
         is identified by the fact that its possible trajectories are restricted to a
@@ -227,7 +227,7 @@ class DDController:
         #     coeffs = torch.zeros((self.history_length, 1))
         # else:
         #     coeffs = torch.vstack((self._previous_coeffs[1:], torch.tensor([[0.0]])))
-        
+
         initial = torch.linalg.lstsq(Z_weighted, z_weighted)
         coeffs = initial.solution
 
