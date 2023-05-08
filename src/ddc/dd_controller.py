@@ -84,7 +84,7 @@ class DDController:
             "lstsq":    use `torch.linalg.lstsq`; does not support `control_sparsity`
             "gd":       gradient descent
         :param gd_lr: learning rate for `method == "gd"`
-        :param gd_iterations: number of iterantions when `method == "gd"`
+        :param gd_iterations: number of iterations when `method == "gd"`
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
