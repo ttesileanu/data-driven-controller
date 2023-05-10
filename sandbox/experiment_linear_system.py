@@ -2,6 +2,23 @@
 ## Experiments with controlling linear systems
 
 # %%
+# enable autoreload if we're running interactively
+
+import sys
+
+if hasattr(sys, "ps1"):
+    try:
+        from IPython import get_ipython
+
+        ipython = get_ipython()
+        ipython.run_line_magic("load_ext", "autoreload")
+        ipython.run_line_magic("autoreload", "2")
+
+        print("autoreload active")
+    except ModuleNotFoundError:
+        pass
+
+# %%
 import torch
 import numpy as np
 
