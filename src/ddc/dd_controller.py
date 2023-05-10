@@ -2,6 +2,8 @@ import torch
 
 from typing import Tuple
 
+from .solvers import lstsq_constrained
+
 
 class DDController:
     def __init__(
@@ -11,6 +13,7 @@ class DDController:
         history_length: int,
         seed_length: int = 1,
         control_horizon: int = 1,
+        exact_match: bool = True,
         observation_match_cost: float = 1.0,
         control_match_cost: float = 1.0,
         target_cost: float = 0.01,
@@ -55,8 +58,24 @@ class DDController:
         prior samples used in the prediction is given by `history_length`.
 
         The control planning is set up as an optimization problem where the coefficients
-        `alpha` are inferred such that a loss function containing five terms is
-        minimized:
+        `alpha` are inferred such that the following loss function is minimized, subject
+        to a constraint:
+
+            L = (target_cost * (predicted observations at horizon)) ** 2
+              + (control_cost * (predicted control after seed)) ** 2
+              + control_sparsity * L1_norm(predicted control after seed) ,
+
+        subject to
+
+            predicted - measured seed observations = 0 , and
+            predicted - measured seed controls = 0 .
+
+        The inferred coefficients are then used to predict the optimal control. Note
+        that apart from the L1 regularization term, this is just a least-squares
+        problem with a linear constraint.
+
+        If `exact_match` is set to false, the constraint is treated softly by
+        incorporating it into the objective:
 
             L = (observation_match_cost * (predicted - measured seed observations)) ** 2
               + (control_match_cost * (predicted - measured seed controls)) ** 2
@@ -64,18 +83,18 @@ class DDController:
               + (control_cost * (predicted control after seed)) ** 2
               + control_sparsity * L1_norm(predicted control after seed) .
 
-        The inferred coefficients are then used to predict the optimal control. Note
-        that apart from the L1 regularization term, this is just a least-squares
-        problem.
-
         :param observation_dim: dimensionality of measurements
         :param control_dim: dimensionality of control
         :param history_length: number of columns to use in the Hankel matrices
         :param seed_length: number of measurements needed to fully specify an internal
             state
         :param control_horizon: how far ahead to aim for reduced measurements
-        :param observation_match_cost: multiplier for matching observation values
-        :param control_match_cost: multiplier for matching seed control values
+        :param exact_match: whether the observations and controls during the seed period
+            are matched exactly or as a soft constraint; see above
+        :param observation_match_cost: multiplier for matching observation values; not
+            used if `exact_match == True`
+        :param control_match_cost: multiplier for matching seed control values; not used
+            if `exact_match == True`
         :param target_cost: multiplier for minimizing observation values at horizon
         :param control_cost: multiplier for minimizing overall control magnitude
         :param control_sparsity: amount of sparsity-inducing, L1 regularizer; only works
@@ -91,6 +110,7 @@ class DDController:
         self.history_length = history_length
         self.seed_length = seed_length
         self.control_horizon = control_horizon
+        self.exact_match = exact_match
         self.observation_match_cost = observation_match_cost
         self.control_match_cost = control_match_cost
         self.target_cost = target_cost
@@ -103,6 +123,10 @@ class DDController:
         if self.control_sparsity != 0:
             if self.method != "gd":
                 assert ValueError("control_sparsity only works with `method=gd`")
+            if exact_match:
+                assert NotImplementedError(
+                    "exact_match not implemented for `method=gd`"
+                )
 
         self.observation_history = None
         self.control_history = None
@@ -151,8 +175,18 @@ class DDController:
         Z, _, Z_weighted, z_weighted = self.get_hankels()
 
         if self.method == "lstsq":
-            result = torch.linalg.lstsq(Z_weighted, z_weighted)
-            coeffs = result.solution
+            if not self.exact_match:
+                result = torch.linalg.lstsq(Z_weighted, z_weighted)
+                coeffs = result.solution
+            else:
+                d = self.observation_dim
+                matchdim = p * (d + c)
+                coeffs = lstsq_constrained(
+                    Z_weighted[matchdim:],
+                    z_weighted[matchdim:],
+                    Z_weighted[:matchdim],
+                    z_weighted[:matchdim],
+                )
         elif self.method == "gd":
             U_unk = Z[-l * c :]
             coeffs = self._solve_gd(Z_weighted, z_weighted, U_unk)
@@ -208,11 +242,12 @@ class DDController:
         Z_weighted = Z.clone()
         z_weighted = z.clone()
 
-        Z_weighted[: p * d] *= self.observation_match_cost
-        z_weighted[: p * d] *= self.observation_match_cost
+        if not self.exact_match:
+            Z_weighted[: p * d] *= self.observation_match_cost
+            z_weighted[: p * d] *= self.observation_match_cost
 
-        Z_weighted[p * d : matchdim] *= self.control_match_cost
-        z_weighted[p * d : matchdim] *= self.control_match_cost
+            Z_weighted[p * d : matchdim] *= self.control_match_cost
+            z_weighted[p * d : matchdim] *= self.control_match_cost
 
         Z_weighted[matchdim : matchdim + p * d] *= self.target_cost
         Z_weighted[-l * c :] *= self.control_cost
