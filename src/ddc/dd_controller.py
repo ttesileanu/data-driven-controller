@@ -180,43 +180,42 @@ class DDController:
         end = len(obs)
         assert len(ctrl) == end
 
-        Y = torch.empty((2 * p * d, n))
-        U = torch.empty(((p + l) * c, n))
-        # target y and target z are zero
-        y = torch.zeros((2 * p * d, 1))
-        u = torch.zeros((p + l) * c, 1)
+        ydim = 2 * p * d
+        udim = (p + l) * c
+        zdim = ydim + udim
+        Z = torch.empty((zdim, n))
+        # target y and target u are zero; we update the 'match' components below
+        z = torch.zeros((zdim, 1))
+
+        matchdim = p * (d + c)
         for i in range(p):
             yi = i * d
-            Y[yi : yi + d] = obs[i : i + n].T
-            y[yi : yi + d] = obs[end + i - p][:, None]
+            Z[yi : yi + d] = obs[i : i + n].T
+            z[yi : yi + d] = obs[end + i - p][:, None]
 
-            yi = (i + p) * d
-            Y[yi : yi + d] = obs[l + i : l + i + n].T
+            ui = p * d + i * c
+            Z[ui : ui + c] = ctrl[i : i + n].T
+            z[ui : ui + c] = ctrl[end + i - p][:, None]
 
-            ui = i * c
-            U[ui : ui + c] = ctrl[i : i + n].T
-            u[ui : ui + c] = ctrl[end + i - p][:, None]
+            yi = matchdim + i * d
+            Z[yi : yi + d] = obs[l + i : l + i + n].T
 
         for i in range(p, p + l):
-            ui = i * c
-            U[ui : ui + c] = ctrl[i : i + n].T
-
-        Z = torch.vstack((Y, U))
-        z = torch.vstack((y, u))
+            ui = matchdim + p * (d - c) + i * c
+            Z[ui : ui + c] = ctrl[i : i + n].T
 
         # weigh using the appropriate coefficients
         Z_weighted = Z.clone()
-        Z_weighted[: p * d] *= self.observation_match_cost
-        Z_weighted[p * d : 2 * p * d] *= self.target_cost
-        Z_weighted[2 * p * d : p * (2 * d + c)] *= self.control_match_cost
-        Z_weighted[-l * c :] *= self.control_cost
-
         z_weighted = z.clone()
-        z_weighted[: p * d] *= self.observation_match_cost
-        # nothing to multiply for [p * d : 2 * p * d] as target y is zero
 
-        z_weighted[2 * p * d : p * (2 * d + c)] *= self.control_match_cost
-        # nothing to multiply for [-l * c :] as target u is zero
+        Z_weighted[: p * d] *= self.observation_match_cost
+        z_weighted[: p * d] *= self.observation_match_cost
+
+        Z_weighted[p * d : matchdim] *= self.control_match_cost
+        z_weighted[p * d : matchdim] *= self.control_match_cost
+
+        Z_weighted[matchdim : matchdim + p * d] *= self.target_cost
+        Z_weighted[-l * c :] *= self.control_cost
 
         return Z, z, Z_weighted, z_weighted
 
