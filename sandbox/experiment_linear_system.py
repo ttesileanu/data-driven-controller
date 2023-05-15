@@ -389,7 +389,7 @@ controller = DDController(
 n_steps = 100
 control = torch.tensor([0.0])
 control_noise = 0.001
-outputs = []
+outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
@@ -400,7 +400,7 @@ for k in range(n_steps):
     outputs.append(y)
     controls.append(control)
 
-    controller.feed(y, control)
+    controller.feed(control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 
@@ -467,7 +467,7 @@ controller = DDController(
 n_steps = 200
 control = torch.tensor([0.0])
 control_noise = 0.001
-outputs = []
+outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
@@ -478,7 +478,7 @@ for k in range(n_steps):
     outputs.append(y)
     controls.append(control)
 
-    controller.feed(y, control)
+    controller.feed(control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 
@@ -552,7 +552,7 @@ controller = DDController(
 n_steps = 200
 control = torch.tensor([0.0])
 control_noise = 0.001
-outputs = []
+outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
@@ -563,7 +563,7 @@ for k in range(n_steps):
     outputs.append(y)
     controls.append(control)
 
-    controller.feed(y, control)
+    controller.feed(control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 
@@ -655,7 +655,7 @@ controller = DDController(
 n_steps = 200
 control = torch.tensor([0.0])
 control_noise = 0.001
-outputs = []
+outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
@@ -666,7 +666,7 @@ for k in range(n_steps):
     outputs.append(y)
     controls.append(control)
 
-    controller.feed(y, control)
+    controller.feed(control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 
@@ -762,7 +762,7 @@ controller = DDController(
 n_steps = 200
 control = torch.tensor([0.0])
 control_noise = 0.001
-outputs = []
+outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
@@ -773,7 +773,7 @@ for k in range(n_steps):
     outputs.append(y)
     controls.append(control)
 
-    controller.feed(y, control)
+    controller.feed(control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 
@@ -849,7 +849,7 @@ controller = DDController(
 n_steps = 2500
 control = torch.tensor([0.0])
 control_noise = 0.001
-outputs = []
+outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
@@ -860,7 +860,7 @@ for k in range(n_steps):
     outputs.append(y)
     controls.append(control)
 
-    controller.feed(y, control)
+    controller.feed(control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 

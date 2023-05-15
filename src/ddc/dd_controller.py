@@ -22,6 +22,7 @@ class DDController:
         method: str = "lstsq",
         gd_lr: float = 0.01,
         gd_iterations: int = 50,
+        noise_handling: str = "none",
     ):
         """Data-driven controller.
 
@@ -83,6 +84,20 @@ class DDController:
               + (control_cost * (predicted control after seed)) ** 2
               + control_sparsity * L1_norm(predicted control after seed) .
 
+        By default the controller assumes that the dynamics is noiseless. If there is
+        noise, the default controller will be suboptimal -- it will basically treat
+        noise optimistically and assume that it will act in favor of stabilization. To
+        treat noise more appropriately, set `noise_handling` to `"average"`. This
+        averages over sets of columns of the Hankel matrices until the linear system
+        that is solved has the number of equations plus the number of constraints equal
+        to the number of unknowns. Specifically, the number of columns is set to
+
+            n_columns = (control_horizon - seed_length) * control_dim ,
+
+        and if `history_length > n_columns`, averaging is done until the number of
+        columns drops down to `n_columns`. (An exception is raised if `history_length`
+        is smaller than `n_columns`.)
+
         :param observation_dim: dimensionality of measurements
         :param control_dim: dimensionality of control
         :param history_length: number of columns to use in the Hankel matrices
@@ -104,6 +119,9 @@ class DDController:
             "gd":       gradient descent
         :param gd_lr: learning rate for `method == "gd"`
         :param gd_iterations: number of iterations when `method == "gd"`
+        :param noise_handling: method for handling noisy data; can be
+            "none":     assume noiseless observations
+            "average":  average over samples; see above
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
@@ -119,6 +137,7 @@ class DDController:
         self.method = method
         self.gd_lr = gd_lr
         self.gd_iterations = gd_iterations
+        self.noise_handling = noise_handling
 
         if self.control_sparsity != 0:
             if self.method != "gd":
@@ -133,13 +152,17 @@ class DDController:
 
         self._previous_coeffs = None
 
-    def feed(self, observation: torch.Tensor, control: torch.Tensor):
+    def feed(self, control: torch.Tensor, observation: torch.Tensor):
         """Register another measurement.
 
-        At most `self.history_length` samples are kept.
+        The necessary number of samples is kept so that the Hankel matrices can have
+        `self.history_length` columns.
 
-        :param observation: output from the model
-        :param control: control input
+        The very first recorded control value is never used, so the history of control
+        values always has one element less than the history of observations.
+
+        :param control: control input *preceding* the latest observation (output)
+        :param observation: latest output from the model
         """
         assert len(observation) == self.observation_dim
         assert len(control) == self.control_dim
@@ -156,8 +179,10 @@ class DDController:
             self.control_history = torch.vstack((self.control_history, control))
 
         n = self.history_length + self.control_horizon + self.seed_length
+        assert n > 1
+
         self.observation_history = self.observation_history[-n:]
-        self.control_history = self.control_history[-n:]
+        self.control_history = self.control_history[-(n - 1) :]
 
     def plan(self) -> torch.Tensor:
         """Estimate optimal control plan given the current history.
@@ -212,31 +237,48 @@ class DDController:
         ctrl = self.control_history
 
         end = len(obs)
-        assert len(ctrl) == end
+        assert len(ctrl) == end - 1
 
         ydim = 2 * p * d
-        udim = (p + l) * c
+        # we need one fewer controls than observations
+        udim = (p + l - 1) * c
         zdim = ydim + udim
         Z = torch.empty((zdim, n))
         # target y and target u are zero; we update the 'match' components below
         z = torch.zeros((zdim, 1))
 
-        matchdim = p * (d + c)
+        matchdim = p * d + (p - 1) * c
         for i in range(p):
             yi = i * d
             Z[yi : yi + d] = obs[i : i + n].T
             z[yi : yi + d] = obs[end + i - p][:, None]
 
-            ui = p * d + i * c
-            Z[ui : ui + c] = ctrl[i : i + n].T
-            z[ui : ui + c] = ctrl[end + i - p][:, None]
+            if i < p - 1:
+                # we need one fewer controls than observations in the match region
+                ui = p * d + i * c
+                Z[ui : ui + c] = ctrl[i : i + n].T
+                z[ui : ui + c] = ctrl[end + i - p][:, None]
 
             yi = matchdim + i * d
             Z[yi : yi + d] = obs[l + i : l + i + n].T
 
-        for i in range(p, p + l):
-            ui = matchdim + p * (d - c) + i * c
+        for i in range(p - 1, p + l - 1):
+            ui = matchdim + p * d + (i - p + 1) * c
             Z[ui : ui + c] = ctrl[i : i + n].T
+
+        # average if needed
+        if self.noise_handling == "average":
+            n_columns = (l - p) * c
+            if n < n_columns:
+                raise ValueError(f"history_length too short for noise averaging.")
+            bins = torch.linspace(0, n, n_columns + 1, dtype=int)
+
+            Z0 = Z
+            Z = torch.empty((zdim, n_columns))
+            for i, (i0, i1) in enumerate(zip(bins, bins[1:])):
+                Z[:, i] = Z0[:, i0:i1].mean(dim=1)
+        elif self.noise_handling != "none":
+            raise ValueError(f"Unknown noise handling method: {self.noise_handling}.")
 
         # weigh using the appropriate coefficients
         Z_weighted = Z.clone()
