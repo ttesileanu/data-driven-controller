@@ -38,7 +38,7 @@ model = LinearSystem(
     control=torch.Tensor([[1.0]]),
     initial_state=torch.Tensor([1.0]),
 )
-observations = model.run(100)
+observations = model.run(100, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
     ax.plot(observations.squeeze())
@@ -55,7 +55,7 @@ model = LinearSystem(
     observation_noise=0.005 * torch.eye(1),
     initial_state=torch.ones(1, 200),
 )
-observations = model.run(100)
+observations = model.run(100, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
     ax.plot(observations.squeeze(), c="k", lw=1.0, alpha=0.04)
@@ -72,7 +72,7 @@ model = LinearSystem(
     state_noise=0.005 * torch.eye(1),
     initial_state=torch.ones(1, 200),
 )
-observations = model.run(100)
+observations = model.run(100, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
     ax.plot(observations.squeeze(), c="k", lw=1.0, alpha=0.04)
@@ -96,7 +96,7 @@ control_plan = torch.hstack(
         torch.zeros(40),
     )
 )[:, None]
-observations = model.run(control_plan=control_plan)
+observations = model.run(control_plan=control_plan, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
     ax.plot(observations.squeeze())
@@ -123,7 +123,7 @@ control_plan = torch.hstack(
         torch.zeros(40),
     )
 )[:, None]
-observations = model.run(control_plan=control_plan)
+observations = model.run(control_plan=control_plan, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
     ax.plot(observations.squeeze(), c="C0", lw=1.0, alpha=0.04)
@@ -150,7 +150,7 @@ control_plan = torch.hstack(
         torch.zeros(40),
     )
 )[:, None]
-observations = model.run(control_plan=control_plan)
+observations = model.run(control_plan=control_plan, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
     ax.plot(observations.squeeze(), c="C0", lw=1.0, alpha=0.04)
@@ -192,7 +192,7 @@ control_plan = torch.hstack(
         ),
     )
 )[:, None]
-observations = model.run(control_plan=control_plan)
+observations = model.run(control_plan=control_plan, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
     for i in range(control_plan.shape[-1]):
@@ -211,13 +211,15 @@ with dv.FigureManager() as (_, ax):
 
 # %% [markdown]
 #### Two-dimensional
+
+# %%
 rot_mat = torch.FloatTensor([[np.cos(0.2), np.sin(0.2)], [-np.sin(0.2), np.cos(0.2)]])
 model = LinearSystem(
     evolution=0.99 * rot_mat,
     control=torch.eye(2),
     initial_state=torch.tensor([1.0, 0.0]),
 )
-observations = model.run(25)
+observations = model.run(25, store_initial=True)
 
 with dv.FigureManager(figsize=(4, 4)) as (_, ax):
     theta = np.linspace(0, 2 * np.pi, 50)
@@ -242,6 +244,8 @@ with dv.FigureManager(figsize=(4, 4)) as (_, ax):
 
 # %% [markdown]
 #### Two-dimensional with observation noise
+
+# %%
 rot_mat = torch.FloatTensor([[np.cos(0.2), np.sin(0.2)], [-np.sin(0.2), np.cos(0.2)]])
 model = LinearSystem(
     evolution=0.99 * rot_mat,
@@ -249,7 +253,7 @@ model = LinearSystem(
     observation_noise=0.001 * torch.tensor([[0.55, -0.45], [-0.45, 0.55]]),
     initial_state=torch.tile(torch.tensor([[1.0], [0.0]]), (1, 25)),
 )
-observations = model.run(25)
+observations = model.run(25, store_initial=True)
 
 with dv.FigureManager(figsize=(4, 4)) as (_, ax):
     theta = np.linspace(0, 2 * np.pi, 50)
@@ -280,6 +284,8 @@ with dv.FigureManager(figsize=(4, 4)) as (_, ax):
 
 # %% [markdown]
 #### Two-dimensional with state noise
+
+# %%
 rot_mat = torch.FloatTensor([[np.cos(0.2), np.sin(0.2)], [-np.sin(0.2), np.cos(0.2)]])
 model = LinearSystem(
     evolution=0.99 * rot_mat,
@@ -287,7 +293,7 @@ model = LinearSystem(
     state_noise=0.0001 * torch.tensor([[0.55, -0.45], [-0.45, 0.55]]),
     initial_state=torch.tile(torch.tensor([[1.0], [0.0]]), (1, 25)),
 )
-observations = model.run(25)
+observations = model.run(25, store_initial=True)
 
 with dv.FigureManager(figsize=(4, 4)) as (_, ax):
     theta = np.linspace(0, 2 * np.pi, 50)
@@ -317,6 +323,8 @@ with dv.FigureManager(figsize=(4, 4)) as (_, ax):
 
 # %% [markdown]
 #### Two-dimensional with control
+
+# %%
 rot_mat = torch.FloatTensor([[np.cos(0.2), np.sin(0.2)], [-np.sin(0.2), np.cos(0.2)]])
 model = LinearSystem(
     evolution=0.99 * rot_mat,
@@ -333,7 +341,7 @@ control_plan = torch.cat(
         torch.zeros((10, 1, 1)),
     )
 )
-observations = model.run(control_plan=control_plan)
+observations = model.run(control_plan=control_plan, store_initial=True)
 
 with dv.FigureManager(figsize=(4, 4)) as (_, ax):
     theta = np.linspace(0, 2 * np.pi, 50)

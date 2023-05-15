@@ -91,9 +91,17 @@ class LinearSystem:
         self.generator = generator
 
     def run(
-        self, n_steps: Optional[int] = None, control_plan: Optional[torch.Tensor] = None
+        self,
+        n_steps: Optional[int] = None,
+        control_plan: Optional[torch.Tensor] = None,
+        store_initial: bool = False,
     ) -> torch.Tensor:
         """Run the dynamical system for a number of steps.
+
+        States are stored by default *after* the dynamics acts, but see `store_initial`
+        for storing the initial state, as well (which is equivalent to storing the state
+        before the dynamics, except that the final state is also appended to the return
+        tensor).
 
         If the number of steps is provided without a `control_plan`, the function will
         simulate an autonomous system (i.e., with control set to 0).
@@ -108,8 +116,11 @@ class LinearSystem:
         :param control_plan: control inputs to be provided to the system; should have
             shape `(n, control_dim)` or `(n, control_dim, batch_size); in the former
             case, if `batch_size > 1`, the same control is used for all samples
-        :return: the system observations, with shape `(n, observation_dim, batch_size)`,
-            where `n` is the number of steps
+        :param store_initial: whether to store the initial state of the system, before
+            any dynamics steps, or only store the subsequent evolution
+        :return: the system observations, with shape `(n_out, observation_dim,
+            batch_size)`, where `n_out` can be `n` (if `store_initial` is false) or
+            `n + 1` (if `store_initial` is true)
         """
         if control_plan is not None:
             assert control_plan.ndim in [2, 3]
@@ -125,16 +136,11 @@ class LinearSystem:
 
             assert control_plan.shape[1] == self.control_dim
 
-        observations = torch.empty(n_steps, self.observation_dim, self.batch_size)
+        n_out = n_steps + store_initial
+        observations = torch.empty(n_out, self.observation_dim, self.batch_size)
+        if store_initial:
+            observations[0] = self.observe()
         for i in range(n_steps):
-            # observe
-            y = self.observation @ self.state
-            if self.has_observation_noise:
-                y += self._observation_gaussian.sample(
-                    self.batch_size, generator=self.generator
-                ).T
-            observations[i] = y
-
             # evolve
             x = self.evolution @ self.state
             if control_plan is not None:
@@ -146,4 +152,22 @@ class LinearSystem:
 
             self.state = x
 
+            # observe
+            observations[i + store_initial] = self.observe()
+
         return observations
+
+    def observe(self) -> torch.Tensor:
+        """Read out one observation (or one batch of observations) from the system.
+
+        Note that calling `observe` multiple times on the same state can yield different
+        results if `observation_noise` is non-zero.
+
+        :return: system observation(s), shape `(observation_dim, batch_size)`
+        """
+        y = self.observation @ self.state
+        if self.has_observation_noise:
+            y += self._observation_gaussian.sample(
+                self.batch_size, generator=self.generator
+            ).T
+        return y
