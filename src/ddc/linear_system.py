@@ -50,14 +50,16 @@ class LinearSystem:
         assert self.control.shape[0] == self.state_dim
 
         if observation is None:
-            self.observation = torch.eye(self.state_dim)
+            self.observation = torch.eye(self.state_dim, dtype=self.evolution.dtype)
         else:
             self.observation = observation.detach().clone()
         self.observation_dim = self.observation.shape[0]
         assert self.observation.shape[1] == self.state_dim
 
         if state_noise is None:
-            self.state_noise = torch.zeros((self.state_dim, self.state_dim))
+            self.state_noise = torch.zeros(
+                (self.state_dim, self.state_dim), dtype=self.evolution.dtype
+            )
             self.has_state_noise = False
         else:
             self.state_noise = state_noise.detach().clone()
@@ -68,7 +70,7 @@ class LinearSystem:
 
         if observation_noise is None:
             self.observation_noise = torch.zeros(
-                (self.observation_dim, self.observation_dim)
+                (self.observation_dim, self.observation_dim), dtype=self.evolution.dtype
             )
             self.has_observation_noise = False
         else:
@@ -79,7 +81,7 @@ class LinearSystem:
         assert self.observation_noise.shape[1] == self.observation_dim
 
         if initial_state is None:
-            self.state = torch.zeros((self.state_dim, 1))
+            self.state = torch.zeros((self.state_dim, 1), dtype=self.evolution.dtype)
             self.batch_size = 1
         else:
             if initial_state.ndim == 1:
@@ -137,7 +139,9 @@ class LinearSystem:
             assert control_plan.shape[1] == self.control_dim
 
         n_out = n_steps + store_initial
-        observations = torch.empty(n_out, self.observation_dim, self.batch_size)
+        observations = torch.empty(
+            n_out, self.observation_dim, self.batch_size, dtype=self.state.dtype
+        )
         if store_initial:
             observations[0] = self.observe()
         for i in range(n_steps):

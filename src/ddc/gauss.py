@@ -18,7 +18,7 @@ class GaussianDistribution:
         assert self.cov.shape[1] == self.n
 
         if mu is None:
-            self.mu = torch.zeros(self.n)
+            self.mu = torch.zeros(self.n, dtype=self.cov.dtype)
         else:
             self.mu = mu
             assert self.mu.ndim == 1
@@ -47,7 +47,7 @@ class GaussianDistribution:
         else:
             single = False
 
-        y = torch.randn(count, self.n, generator=generator)
+        y = torch.randn(count, self.n, generator=generator, dtype=self.trafo.dtype)
         x = y @ self.trafo
 
         x = x + self.mu

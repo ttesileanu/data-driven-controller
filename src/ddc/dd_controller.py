@@ -243,9 +243,10 @@ class DDController:
         # we need one fewer controls than observations
         udim = (p + l - 1) * c
         zdim = ydim + udim
-        Z = torch.empty((zdim, n))
+        dtype = obs.dtype
+        Z = torch.empty((zdim, n), dtype=dtype)
         # target y and target u are zero; we update the 'match' components below
-        z = torch.zeros((zdim, 1))
+        z = torch.zeros((zdim, 1), dtype=dtype)
 
         matchdim = p * d + (p - 1) * c
         for i in range(p):
@@ -274,7 +275,7 @@ class DDController:
             bins = torch.linspace(0, n, n_columns + 1, dtype=int)
 
             Z0 = Z
-            Z = torch.empty((zdim, n_columns))
+            Z = torch.empty((zdim, n_columns), dtype=dtype)
             for i, (i0, i1) in enumerate(zip(bins, bins[1:])):
                 Z[:, i] = Z0[:, i0:i1].mean(dim=1)
         elif self.noise_handling != "none":
