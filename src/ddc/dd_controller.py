@@ -205,7 +205,7 @@ class DDController:
                 coeffs = result.solution
             else:
                 d = self.observation_dim
-                matchdim = p * (d + c)
+                matchdim = p * d + (p - 1) * c
                 coeffs = lstsq_constrained(
                     Z_weighted[matchdim:],
                     z_weighted[matchdim:],
