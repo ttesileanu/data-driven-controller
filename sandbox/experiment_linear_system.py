@@ -382,8 +382,7 @@ controller = DDController(
     1,
     history_length,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
+    noise_handling="average",
 )
 
 n_steps = 100
@@ -404,9 +403,7 @@ for k in range(n_steps):
     control_plan = controller.plan()
     control = control_plan[0]
 
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
+control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
 controls = torch.stack(controls)
@@ -460,8 +457,7 @@ controller = DDController(
     1,
     history_length,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
+    noise_handling="average",
 )
 
 n_steps = 200
@@ -482,9 +478,7 @@ for k in range(n_steps):
     control_plan = controller.plan()
     control = control_plan[0]
 
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
+control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
 controls = torch.stack(controls)
@@ -545,8 +539,7 @@ controller = DDController(
     1,
     history_length,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
+    noise_handling="average",
 )
 
 n_steps = 200
@@ -567,9 +560,7 @@ for k in range(n_steps):
     control_plan = controller.plan()
     control = control_plan[0]
 
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
+control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
 controls = torch.stack(controls)
@@ -648,8 +639,7 @@ controller = DDController(
     1,
     history_length,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
+    noise_handling="average",
 )
 
 n_steps = 200
@@ -670,9 +660,7 @@ for k in range(n_steps):
     control_plan = controller.plan()
     control = control_plan[0]
 
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
+control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
 controls = torch.stack(controls)
@@ -755,8 +743,7 @@ controller = DDController(
     history_length,
     seed_length=2,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
+    noise_handling="average",
 )
 
 n_steps = 200
@@ -777,9 +764,7 @@ for k in range(n_steps):
     control_plan = controller.plan()
     control = control_plan[0]
 
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
+control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
 controls = torch.stack(controls)
@@ -842,8 +827,7 @@ controller = DDController(
     history_length,
     seed_length=2,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
+    noise_handling="average",
 )
 
 n_steps = 2500
@@ -864,9 +848,7 @@ for k in range(n_steps):
     control_plan = controller.plan()
     control = control_plan[0]
 
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
+control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
 controls = torch.stack(controls)
