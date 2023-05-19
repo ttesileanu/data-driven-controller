@@ -189,13 +189,12 @@ class DDController:
 
         :return: control plan, shape `(control_horizon, control_dim)`
         """
-        n = self.history_length
         p = self.seed_length
         l = self.control_horizon
         c = self.control_dim
-        if len(self.observation_history) < n + p + l:
+        if len(self.observation_history) < self.minimal_history:
             # not enough data yet
-            return torch.zeros((l, c))
+            return torch.zeros((l, c), dtype=self.observation_history.dtype)
 
         Z, _, Z_weighted, z_weighted = self.get_hankels()
 
@@ -330,3 +329,8 @@ class DDController:
         coeffs = coeffs.detach()
         self._previous_coeffs = coeffs
         return coeffs
+
+    @property
+    def minimal_history(self):
+        """The minimal number of steps needed to calculate non-trivial control."""
+        return self.history_length + self.seed_length + self.control_horizon
