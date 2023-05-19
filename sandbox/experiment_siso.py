@@ -34,9 +34,9 @@ from ddc import LinearSystem, DDController
 # %%
 torch.manual_seed(42)
 model = LinearSystem(
-    evolution=torch.tensor([[1.1]]),
-    control=torch.tensor([[1.0]]),
-    initial_state=torch.tensor([[1.0]]),
+    evolution=torch.tensor([[1.1]], dtype=float),
+    control=torch.tensor([[1.0]], dtype=float),
+    initial_state=torch.tensor([[1.0]], dtype=float),
 )
 history_length = 25
 control_horizon = 4
@@ -45,18 +45,18 @@ controller = DDController(
     1,
     history_length,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
 )
 
-n_steps = 100
-control = torch.tensor([0.0])
-control_noise = 0.001
+n_steps = 200
+control = torch.tensor([0.0], dtype=float)
+control_noise = 0.02
 outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
+    # control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=control[None, :])
     y = y[0, :, 0]
 
@@ -67,9 +67,7 @@ for k in range(n_steps):
     control_plan = controller.plan()
     control = control_plan[0]
 
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
+control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
 controls = torch.stack(controls)
@@ -107,15 +105,15 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
     axs[1].legend(frameon=False, loc="lower right")
 
 # %% [markdown]
-# ## With observation noise
+# ## With observation noise, naive controller
 
 # %%
 torch.manual_seed(42)
 model = LinearSystem(
-    evolution=torch.tensor([[1.1]]),
-    control=torch.tensor([[1.0]]),
-    initial_state=torch.tensor([[1.0]]),
-    observation_noise=torch.tensor([[0.2]]),
+    evolution=torch.tensor([[1.1]], dtype=float),
+    control=torch.tensor([[1.0]], dtype=float),
+    initial_state=torch.tensor([[1.0]], dtype=float),
+    observation_noise=torch.tensor([[0.1]], dtype=float),
 )
 history_length = 25
 control_horizon = 4
@@ -124,18 +122,18 @@ controller = DDController(
     1,
     history_length,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
 )
 
-n_steps = 100
-control = torch.tensor([0.0])
-control_noise = 0.001
+n_steps = 200
+control = torch.tensor([0.0], dtype=float)
+control_noise = 0.02
 outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
+    # control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=control[None, :])
     y = y[0, :, 0]
 
@@ -146,9 +144,85 @@ for k in range(n_steps):
     control_plan = controller.plan()
     control = control_plan[0]
 
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
+control_start = controller.minimal_history
+
+outputs = torch.stack(outputs)
+controls = torch.stack(controls)
+
+# %%
+with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
+    yl = (outputs.min(), outputs.max())
+    axs[0].fill_betweenx(
+        yl,
+        [0, 0],
+        2 * [control_start],
+        color="gray",
+        alpha=0.5,
+        edgecolor="none",
+        label="no control",
+    )
+    axs[0].plot(outputs.squeeze())
+    axs[0].set_xlabel("time")
+    axs[0].set_ylabel("observation")
+    axs[0].legend(frameon=False)
+
+    yl = (controls.min(), controls.max())
+    axs[1].fill_betweenx(
+        yl,
+        [0, 0],
+        2 * [control_start],
+        color="gray",
+        alpha=0.5,
+        edgecolor="none",
+        label="no control",
+    )
+    axs[1].plot(controls.squeeze())
+    axs[1].set_xlabel("time")
+    axs[1].set_ylabel("control")
+    axs[1].legend(frameon=False, loc="lower right")
+
+# %% [markdown]
+# ## With observation noise, averaging controller
+
+# %%
+torch.manual_seed(42)
+model = LinearSystem(
+    evolution=torch.tensor([[1.1]], dtype=float),
+    control=torch.tensor([[1.0]], dtype=float),
+    initial_state=torch.tensor([[1.0]], dtype=float),
+    observation_noise=torch.tensor([[0.1]], dtype=float),
 )
+history_length = 25
+control_horizon = 4
+controller = DDController(
+    1,
+    1,
+    history_length,
+    control_horizon=control_horizon,
+    noise_handling="average",
+)
+
+n_steps = 500
+control = torch.tensor([0.0], dtype=float)
+control_noise = 0.02
+outputs = [model.observe()[:, 0]]
+controls = []
+for k in range(n_steps):
+    # need noise for exploration
+    # control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
+    y = model.run(control_plan=control[None, :])
+    y = y[0, :, 0]
+
+    outputs.append(y)
+    controls.append(control)
+
+    controller.feed(control, y)
+    control_plan = controller.plan()
+    control = control_plan[0]
+
+control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
 controls = torch.stack(controls)
