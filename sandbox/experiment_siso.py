@@ -55,7 +55,6 @@ controls_prenoise = []
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    # control = control + control_noise * torch.randn(control.shape)
     eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
     actual_control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=actual_control[None, :])
@@ -135,7 +134,6 @@ controls_prenoise = []
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    # control = control + control_noise * torch.randn(control.shape)
     eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
     actual_control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=actual_control[None, :])
@@ -216,7 +214,6 @@ controls_prenoise = []
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    # control = control + control_noise * torch.randn(control.shape)
     eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
     actual_control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=actual_control[None, :])
