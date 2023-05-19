@@ -23,6 +23,7 @@ class DDController:
         gd_lr: float = 0.01,
         gd_iterations: int = 50,
         noise_handling: str = "none",
+        eager_start: bool = False,
     ):
         """Data-driven controller.
 
@@ -122,6 +123,9 @@ class DDController:
         :param noise_handling: method for handling noisy data; can be
             "none":     assume noiseless observations
             "average":  average over samples; see above
+        :param eager_start: if true, return non-trivial controls as soon as the minimal
+            number of samples required for a solution are available, even if the
+            requested `history_length` has not been reached
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
@@ -138,6 +142,7 @@ class DDController:
         self.gd_lr = gd_lr
         self.gd_iterations = gd_iterations
         self.noise_handling = noise_handling
+        self.eager_start = eager_start
 
         if self.control_sparsity != 0:
             if self.method != "gd":
@@ -182,7 +187,9 @@ class DDController:
         assert n > 1
 
         self.observation_history = self.observation_history[-n:]
-        self.control_history = self.control_history[-(n - 1) :]
+
+        n_ctrl = len(self.observation_history) - 1
+        self.control_history = self.control_history[-n_ctrl:]
 
     def plan(self) -> torch.Tensor:
         """Estimate optimal control plan given the current history.
@@ -227,7 +234,6 @@ class DDController:
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         p = self.seed_length
         l = self.control_horizon
-        n = self.history_length
 
         d = self.observation_dim
         c = self.control_dim
@@ -237,6 +243,8 @@ class DDController:
 
         end = len(obs)
         assert len(ctrl) == end - 1
+
+        n = end - l - p
 
         ydim = 2 * p * d
         # we need one fewer controls than observations
@@ -333,4 +341,23 @@ class DDController:
     @property
     def minimal_history(self):
         """The minimal number of steps needed to calculate non-trivial control."""
-        return self.history_length + self.seed_length + self.control_horizon
+        p = self.seed_length
+        l = self.control_horizon
+        c = self.control_dim
+
+        if self.eager_start:
+            # we have a total dimension
+            #   zdim = 2 * p * d + (p + l - 1) * c
+            # and a number of constraints
+            #   matchdim = p * d + (p - 1) * c
+            # the number of non-constraint rows is
+            #   zdim - matchdim = p * d + l * c
+            # and the number of degrees of freedom is
+            #   zdim - 2 * matchdim = (l - p - 1) * c
+
+            # end = len(obs) must equal l + p + n
+            # for rank reasons, I want n = (l - p - 1) * c
+            # end = l + p + (l - p - 1) * c
+            return l + p + (l - p - 1) * c
+        else:
+            return self.history_length + p + l
