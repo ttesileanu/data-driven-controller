@@ -392,7 +392,8 @@ outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=control[None, :])
     y = y[0, :, 0]
 
@@ -467,7 +468,8 @@ outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=control[None, :])
     y = y[0, :, 0]
 
@@ -549,7 +551,8 @@ outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=control[None, :])
     y = y[0, :, 0]
 
@@ -649,7 +652,8 @@ outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=control[None, :])
     y = y[0, :, 0]
 
@@ -753,7 +757,8 @@ outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=control[None, :])
     y = y[0, :, 0]
 
@@ -837,7 +842,8 @@ outputs = [model.observe()[:, 0]]
 controls = []
 for k in range(n_steps):
     # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
+    eps = control_noise * (2 * torch.rand(control.shape) - 1)
+    control = control + eps * torch.linalg.norm(outputs[-1])
     y = model.run(control_plan=control[None, :])
     y = y[0, :, 0]
 
