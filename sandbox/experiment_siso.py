@@ -51,25 +51,28 @@ n_steps = 200
 control = torch.tensor([0.0], dtype=float)
 control_noise = 0.02
 outputs = [model.observe()[:, 0]]
+controls_prenoise = []
 controls = []
 for k in range(n_steps):
     # need noise for exploration
     # control = control + control_noise * torch.randn(control.shape)
     eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
-    control = control + eps * torch.linalg.norm(outputs[-1])
-    y = model.run(control_plan=control[None, :])
+    actual_control = control + eps * torch.linalg.norm(outputs[-1])
+    y = model.run(control_plan=actual_control[None, :])
     y = y[0, :, 0]
 
     outputs.append(y)
-    controls.append(control)
+    controls_prenoise.append(control)
+    controls.append(actual_control)
 
-    controller.feed(control, y)
+    controller.feed(actual_control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 
 control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
+controls_prenoise = torch.stack(controls_prenoise)
 controls = torch.stack(controls)
 
 # %%
@@ -128,25 +131,28 @@ n_steps = 200
 control = torch.tensor([0.0], dtype=float)
 control_noise = 0.02
 outputs = [model.observe()[:, 0]]
+controls_prenoise = []
 controls = []
 for k in range(n_steps):
     # need noise for exploration
     # control = control + control_noise * torch.randn(control.shape)
     eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
-    control = control + eps * torch.linalg.norm(outputs[-1])
-    y = model.run(control_plan=control[None, :])
+    actual_control = control + eps * torch.linalg.norm(outputs[-1])
+    y = model.run(control_plan=actual_control[None, :])
     y = y[0, :, 0]
 
     outputs.append(y)
-    controls.append(control)
+    controls_prenoise.append(control)
+    controls.append(actual_control)
 
-    controller.feed(control, y)
+    controller.feed(actual_control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 
 control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
+controls_prenoise = torch.stack(controls_prenoise)
 controls = torch.stack(controls)
 
 # %%
@@ -202,29 +208,32 @@ controller = DDController(
     noise_handling="average",
 )
 
-n_steps = 500
+n_steps = 1000
 control = torch.tensor([0.0], dtype=float)
 control_noise = 0.02
 outputs = [model.observe()[:, 0]]
+controls_prenoise = []
 controls = []
 for k in range(n_steps):
     # need noise for exploration
     # control = control + control_noise * torch.randn(control.shape)
     eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
-    control = control + eps * torch.linalg.norm(outputs[-1])
-    y = model.run(control_plan=control[None, :])
+    actual_control = control + eps * torch.linalg.norm(outputs[-1])
+    y = model.run(control_plan=actual_control[None, :])
     y = y[0, :, 0]
 
     outputs.append(y)
-    controls.append(control)
+    controls_prenoise.append(control)
+    controls.append(actual_control)
 
-    controller.feed(control, y)
+    controller.feed(actual_control, y)
     control_plan = controller.plan()
     control = control_plan[0]
 
 control_start = controller.minimal_history
 
 outputs = torch.stack(outputs)
+controls_prenoise = torch.stack(controls_prenoise)
 controls = torch.stack(controls)
 
 # %%
