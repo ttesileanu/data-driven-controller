@@ -63,7 +63,6 @@ class LinearSystem:
             self.has_state_noise = False
         else:
             self.state_noise = state_noise.detach().clone()
-            self._state_gaussian = GaussianDistribution(self.state_noise)
             self.has_state_noise = True
         assert self.state_noise.shape[0] == self.state_dim
         assert self.state_noise.shape[1] == self.state_dim
@@ -75,7 +74,6 @@ class LinearSystem:
             self.has_observation_noise = False
         else:
             self.observation_noise = observation_noise.detach().clone()
-            self._observation_gaussian = GaussianDistribution(self.observation_noise)
             self.has_observation_noise = True
         assert self.observation_noise.shape[0] == self.observation_dim
         assert self.observation_noise.shape[1] == self.observation_dim
@@ -91,6 +89,13 @@ class LinearSystem:
         assert self.state.shape[0] == self.state_dim
 
         self.generator = generator
+
+        self._sanitize_types()
+
+        if self.has_state_noise:
+            self._state_gaussian = GaussianDistribution(self.state_noise)
+        if self.has_observation_noise:
+            self._observation_gaussian = GaussianDistribution(self.observation_noise)
 
     def run(
         self,
@@ -175,3 +180,35 @@ class LinearSystem:
                 self.batch_size, generator=self.generator
             ).T
         return y
+
+    def convert_type(self, dtype: torch.dtype) -> "LinearSystem":
+        """Convert all model tensors to the given type.
+
+        :return: self
+        """
+        self.evolution = self.evolution.type(dtype)
+        self.control = self.control.type(dtype)
+        self.observation = self.observation.type(dtype)
+        self.state = self.state.type(dtype)
+
+        if self.has_state_noise:
+            self.state_noise = self.state_noise.type(dtype)
+        if self.has_observation_noise:
+            self.observation_noise = self.observation_noise.type(dtype)
+
+        return self
+
+    def _sanitize_types(self):
+        """Promote all tensors to a common type."""
+        # find the common type
+        common_type = self.evolution.dtype
+        for t in [self.control, self.observation, self.state]:
+            common_type = torch.promote_types(common_type, t.dtype)
+
+        if self.has_state_noise:
+            common_type = torch.promote_types(common_type, self.state_noise.dtype)
+        if self.has_observation_noise:
+            common_type = torch.promote_types(common_type, self.observation_noise.dtype)
+
+        # promote
+        self.convert_type(common_type)

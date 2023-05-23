@@ -34,9 +34,9 @@ from ddc import LinearSystem, DDController
 
 # %%
 model = LinearSystem(
-    evolution=torch.Tensor([[0.9]]),
-    control=torch.Tensor([[1.0]]),
-    initial_state=torch.Tensor([1.0]),
+    evolution=torch.tensor([[0.9]]),
+    control=torch.tensor([[1]]),
+    initial_state=torch.tensor([1.0]),
 )
 observations = model.run(100, store_initial=True)
 
