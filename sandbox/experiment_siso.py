@@ -194,7 +194,7 @@ model = LinearSystem(
     evolution=torch.tensor([[1.1]]),
     control=torch.tensor([[1.0]]),
     initial_state=torch.tensor([[1.0]]),
-    observation_noise=torch.tensor([[1e-6]]),
+    observation_noise=torch.tensor([[0.1]]),
 ).convert_type(torch.float64)
 history_length = 25
 control_horizon = 4
@@ -203,6 +203,90 @@ controller = DDController(
     1,
     history_length,
     control_horizon=control_horizon,
+    noise_handling="average",
+)
+
+n_steps = 300
+control = torch.tensor([0.0], dtype=model.evolution.dtype)
+control_noise = 0.02
+outputs = [model.observe()[:, 0]]
+controls_prenoise = []
+controls = []
+for k in range(n_steps):
+    # need noise for exploration
+    eps = control_noise * (2 * torch.rand(control.shape, dtype=float) - 1)
+    actual_control = control + eps * torch.linalg.norm(outputs[-1])
+    y = model.run(control_plan=actual_control[None, :])
+    y = y[0, :, 0]
+
+    outputs.append(y)
+    controls_prenoise.append(control)
+    controls.append(actual_control)
+
+    controller.feed(actual_control, y)
+    control_plan = controller.plan()
+    control = control_plan[0]
+
+control_start = controller.minimal_history
+
+outputs = torch.stack(outputs)
+controls_prenoise = torch.stack(controls_prenoise)
+controls = torch.stack(controls)
+
+# %%
+with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
+    yl = (outputs.min(), outputs.max())
+    axs[0].fill_betweenx(
+        yl,
+        [0, 0],
+        2 * [control_start],
+        color="gray",
+        alpha=0.5,
+        edgecolor="none",
+        label="no control",
+    )
+    axs[0].plot(outputs.squeeze())
+    axs[0].set_xlabel("time")
+    axs[0].set_ylabel("observation")
+    axs[0].legend(frameon=False)
+
+    yl = (controls.min(), controls.max())
+    axs[1].fill_betweenx(
+        yl,
+        [0, 0],
+        2 * [control_start],
+        color="gray",
+        alpha=0.5,
+        edgecolor="none",
+        label="no control",
+    )
+    axs[1].plot(controls.squeeze())
+    axs[1].set_xlabel("time")
+    axs[1].set_ylabel("control")
+    axs[1].legend(frameon=False, loc="lower right")
+
+# %% [markdown]
+# ## With sparsity
+
+# %%
+torch.manual_seed(42)
+model = LinearSystem(
+    evolution=torch.tensor([[1.1]]),
+    control=torch.tensor([[1.0]]),
+    initial_state=torch.tensor([[1.0]]),
+    observation_noise=torch.tensor([[0.1]]),
+).convert_type(torch.float64)
+history_length = 25
+control_horizon = 4
+controller = DDController(
+    1,
+    1,
+    history_length,
+    control_horizon=control_horizon,
+    control_sparsity=0.1,
+    method="gd",
+    gd_lr=1e-3,
+    gd_iterations=150,
     noise_handling="average",
 )
 
