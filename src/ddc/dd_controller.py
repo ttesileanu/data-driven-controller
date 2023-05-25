@@ -266,7 +266,7 @@ class DDController:
 
         # average if needed
         if self.noise_handling == "average":
-            n_columns = (l - p - 1) * c
+            n_columns = p * d + l * c
             if n < n_columns:
                 raise ValueError(f"history_length too short for noise averaging.")
             bins = torch.linspace(0, n, n_columns + 1, dtype=int)
