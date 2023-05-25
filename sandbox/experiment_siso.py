@@ -34,10 +34,10 @@ from ddc import LinearSystem, DDController
 # %%
 torch.manual_seed(42)
 model = LinearSystem(
-    evolution=torch.tensor([[1.1]], dtype=float),
-    control=torch.tensor([[1.0]], dtype=float),
-    initial_state=torch.tensor([[1.0]], dtype=float),
-)
+    evolution=torch.tensor([[1.1]]),
+    control=torch.tensor([[1.0]]),
+    initial_state=torch.tensor([[1.0]]),
+).convert_type(torch.float64)
 history_length = 25
 control_horizon = 4
 controller = DDController(
@@ -48,7 +48,7 @@ controller = DDController(
 )
 
 n_steps = 200
-control = torch.tensor([0.0], dtype=float)
+control = torch.tensor([0.0], dtype=model.evolution.dtype)
 control_noise = 0.02
 outputs = [model.observe()[:, 0]]
 controls_prenoise = []
@@ -112,11 +112,11 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
 # %%
 torch.manual_seed(42)
 model = LinearSystem(
-    evolution=torch.tensor([[1.1]], dtype=float),
-    control=torch.tensor([[1.0]], dtype=float),
-    initial_state=torch.tensor([[1.0]], dtype=float),
-    observation_noise=torch.tensor([[0.1]], dtype=float),
-)
+    evolution=torch.tensor([[1.1]]),
+    control=torch.tensor([[1.0]]),
+    initial_state=torch.tensor([[1.0]]),
+    observation_noise=torch.tensor([[0.01]]),
+).convert_type(torch.float64)
 history_length = 25
 control_horizon = 4
 controller = DDController(
@@ -127,7 +127,7 @@ controller = DDController(
 )
 
 n_steps = 200
-control = torch.tensor([0.0], dtype=float)
+control = torch.tensor([0.0], dtype=model.evolution.dtype)
 control_noise = 0.02
 outputs = [model.observe()[:, 0]]
 controls_prenoise = []
@@ -191,11 +191,11 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
 # %%
 torch.manual_seed(42)
 model = LinearSystem(
-    evolution=torch.tensor([[1.1]], dtype=float),
-    control=torch.tensor([[1.0]], dtype=float),
-    initial_state=torch.tensor([[1.0]], dtype=float),
-    observation_noise=torch.tensor([[0.1]], dtype=float),
-)
+    evolution=torch.tensor([[1.1]]),
+    control=torch.tensor([[1.0]]),
+    initial_state=torch.tensor([[1.0]]),
+    observation_noise=torch.tensor([[1e-6]]),
+).convert_type(torch.float64)
 history_length = 25
 control_horizon = 4
 controller = DDController(
@@ -206,8 +206,8 @@ controller = DDController(
     noise_handling="average",
 )
 
-n_steps = 1000
-control = torch.tensor([0.0], dtype=float)
+n_steps = 300
+control = torch.tensor([0.0], dtype=model.evolution.dtype)
 control_noise = 0.02
 outputs = [model.observe()[:, 0]]
 controls_prenoise = []
