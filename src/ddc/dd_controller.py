@@ -13,9 +13,6 @@ class DDController:
         history_length: int,
         seed_length: int = 1,
         control_horizon: int = 1,
-        exact_match: bool = True,
-        observation_match_cost: float = 1.0,
-        control_match_cost: float = 1.0,
         output_cost: float = 0.01,
         target_cost: float = 0.01,
         control_cost: float = 0.01,
@@ -78,16 +75,6 @@ class DDController:
         that apart from the L1 regularization term, this is just a least-squares
         problem with a linear constraint.
 
-        If `exact_match` is set to false, the constraint is treated softly by
-        incorporating it into the objective:
-
-            L = (observation_match_cost * (predicted - measured seed observations)) ** 2
-              + (control_match_cost * (predicted - measured seed controls)) ** 2
-              + (output_cost * (predicted observations between seed and horizon)) ** 2
-              + (target_cost * (predicted observations at horizon)) ** 2
-              + (control_cost * (predicted control after seed)) ** 2
-              + control_sparsity * L1_norm(predicted control after seed) .
-
         By default the controller assumes that the dynamics is noiseless. If there is
         noise, the default controller will be suboptimal -- it will basically treat
         noise optimistically and assume that it will act in favor of stabilization. To
@@ -108,12 +95,6 @@ class DDController:
         :param seed_length: number of measurements needed to fully specify an internal
             state
         :param control_horizon: how far ahead to aim for reduced measurements
-        :param exact_match: whether the observations and controls during the seed period
-            are matched exactly or as a soft constraint; see above
-        :param observation_match_cost: multiplier for matching observation values; not
-            used if `exact_match == True`
-        :param control_match_cost: multiplier for matching seed control values; not used
-            if `exact_match == True`
         :param output_cost: multiplier for minimizing observation values after seed but
             before target
         :param target_cost: multiplier for minimizing observation values at horizon
@@ -137,9 +118,6 @@ class DDController:
         self.history_length = history_length
         self.seed_length = seed_length
         self.control_horizon = control_horizon
-        self.exact_match = exact_match
-        self.observation_match_cost = observation_match_cost
-        self.control_match_cost = control_match_cost
         self.output_cost = output_cost
         self.target_cost = target_cost
         self.control_cost = control_cost
@@ -153,10 +131,7 @@ class DDController:
         if self.control_sparsity != 0:
             if self.method != "gd":
                 assert ValueError("control_sparsity only works with `method=gd`")
-            if exact_match:
-                assert NotImplementedError(
-                    "exact_match not implemented for `method=gd`"
-                )
+            assert NotImplementedError("not yet implemented ()`method=gd`)")
 
         self.observation_history = None
         self.control_history = None
@@ -212,18 +187,14 @@ class DDController:
         Z, _, Z_weighted, z_weighted = self.get_hankels()
 
         if self.method == "lstsq":
-            if not self.exact_match:
-                result = torch.linalg.lstsq(Z_weighted, z_weighted)
-                coeffs = result.solution
-            else:
-                d = self.observation_dim
-                matchdim = p * d + (p - 1) * c
-                coeffs = lstsq_constrained(
-                    Z_weighted[matchdim:],
-                    z_weighted[matchdim:],
-                    Z_weighted[:matchdim],
-                    z_weighted[:matchdim],
-                )
+            d = self.observation_dim
+            matchdim = p * d + (p - 1) * c
+            coeffs = lstsq_constrained(
+                Z_weighted[matchdim:],
+                z_weighted[matchdim:],
+                Z_weighted[:matchdim],
+                z_weighted[:matchdim],
+            )
         elif self.method == "gd":
             U_unk = Z[-l * c :]
             coeffs = self._solve_gd(Z_weighted, z_weighted, U_unk)
@@ -310,13 +281,6 @@ class DDController:
         # weigh using the appropriate coefficients
         Z_weighted = Z.clone()
         z_weighted = z.clone()
-
-        if not self.exact_match:
-            Z_weighted[: p * d] *= self.observation_match_cost
-            z_weighted[: p * d] *= self.observation_match_cost
-
-            Z_weighted[p * d : matchdim] *= self.control_match_cost
-            z_weighted[p * d : matchdim] *= self.control_match_cost
 
         if self.output_cost != 0:
             Z_weighted[matchdim : startui - p * d] *= self.output_cost
