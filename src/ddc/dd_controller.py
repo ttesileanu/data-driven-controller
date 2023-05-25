@@ -2,7 +2,7 @@ import torch
 
 from typing import Tuple
 
-from .solvers import lstsq_constrained
+from .solvers import lstsq_constrained, lstsq_l1reg_constrained
 
 
 class DDController:
@@ -130,8 +130,7 @@ class DDController:
 
         if self.control_sparsity != 0:
             if self.method != "gd":
-                assert ValueError("control_sparsity only works with `method=gd`")
-            assert NotImplementedError("not yet implemented ()`method=gd`)")
+                raise ValueError("control_sparsity only works with `method=gd`")
 
         self.observation_history = None
         self.control_history = None
@@ -180,15 +179,15 @@ class DDController:
         p = self.seed_length
         l = self.control_horizon
         c = self.control_dim
+        d = self.observation_dim
         if len(self.observation_history) < self.minimal_history:
             # not enough data yet
             return torch.zeros((l, c), dtype=self.observation_history.dtype)
 
         Z, _, Z_weighted, z_weighted = self.get_hankels()
 
+        matchdim = p * d + (p - 1) * c
         if self.method == "lstsq":
-            d = self.observation_dim
-            matchdim = p * d + (p - 1) * c
             coeffs = lstsq_constrained(
                 Z_weighted[matchdim:],
                 z_weighted[matchdim:],
@@ -197,7 +196,17 @@ class DDController:
             )
         elif self.method == "gd":
             U_unk = Z[-l * c :]
-            coeffs = self._solve_gd(Z_weighted, z_weighted, U_unk)
+            coeffs = lstsq_l1reg_constrained(
+                Z_weighted[matchdim:],
+                z_weighted[matchdim:],
+                Z_weighted[:matchdim],
+                z_weighted[:matchdim],
+                U_unk,
+                torch.zeros((l * c, 1), dtype=self.observation_history.dtype),
+                gamma=self.control_sparsity,
+                lr=self.gd_lr,
+                max_iterations=self.gd_iterations,
+            )
         else:
             raise ValueError(f"Unknown method: {self.method}")
 
@@ -288,40 +297,6 @@ class DDController:
         Z_weighted[-l * c :] *= self.control_cost
 
         return Z, z, Z_weighted, z_weighted
-
-    def _solve_gd(
-        self, Z_weighted: torch.Tensor, z_weighted: torch.Tensor, U_unk: torch.Tensor
-    ) -> torch.Tensor:
-        # if self._previous_coeffs is None:
-        #     coeffs = torch.zeros((self.history_length, 1))
-        # else:
-        #     coeffs = torch.vstack((self._previous_coeffs[1:], torch.tensor([[0.0]])))
-
-        initial = torch.linalg.lstsq(Z_weighted, z_weighted)
-        coeffs = initial.solution
-
-        # TODO: smarter convergence criterion
-        coeffs.requires_grad_()
-        self._loss_curve = []
-        optimizer = torch.optim.SGD([coeffs], lr=self.gd_lr)
-        for i in range(self.gd_iterations):
-            loss_quadratic = 0.5 * torch.sum((Z_weighted @ coeffs - z_weighted) ** 2)
-
-            control_plan = U_unk @ coeffs
-            loss_l1 = self.control_sparsity * control_plan.abs().sum()
-
-            loss = loss_quadratic + loss_l1
-
-            coeffs.grad = None
-            loss.backward()
-
-            optimizer.step()
-
-            self._loss_curve.append(loss.item())
-
-        coeffs = coeffs.detach()
-        self._previous_coeffs = coeffs
-        return coeffs
 
     @property
     def minimal_history(self):
