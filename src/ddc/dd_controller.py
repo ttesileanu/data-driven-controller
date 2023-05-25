@@ -16,6 +16,7 @@ class DDController:
         exact_match: bool = True,
         observation_match_cost: float = 1.0,
         control_match_cost: float = 1.0,
+        output_cost: float = 0.01,
         target_cost: float = 0.01,
         control_cost: float = 0.01,
         control_sparsity: float = 0.0,
@@ -63,7 +64,8 @@ class DDController:
         `alpha` are inferred such that the following loss function is minimized, subject
         to a constraint:
 
-            L = (target_cost * (predicted observations at horizon)) ** 2
+            L = (output_cost * (predicted observations between seed and horizon)) ** 2
+              + (target_cost * (predicted observations at horizon)) ** 2
               + (control_cost * (predicted control after seed)) ** 2
               + control_sparsity * L1_norm(predicted control after seed) ,
 
@@ -81,6 +83,7 @@ class DDController:
 
             L = (observation_match_cost * (predicted - measured seed observations)) ** 2
               + (control_match_cost * (predicted - measured seed controls)) ** 2
+              + (output_cost * (predicted observations between seed and horizon)) ** 2
               + (target_cost * (predicted observations at horizon)) ** 2
               + (control_cost * (predicted control after seed)) ** 2
               + control_sparsity * L1_norm(predicted control after seed) .
@@ -93,7 +96,7 @@ class DDController:
         that is solved has the number of equations plus the number of constraints equal
         to the number of unknowns. Specifically, the number of columns is set to
 
-            n_columns = (control_horizon - seed_length) * control_dim ,
+            n_columns = (control_horizon - seed_length - 1) * control_dim ,
 
         and if `history_length > n_columns`, averaging is done until the number of
         columns drops down to `n_columns`. (An exception is raised if `history_length`
@@ -111,6 +114,8 @@ class DDController:
             used if `exact_match == True`
         :param control_match_cost: multiplier for matching seed control values; not used
             if `exact_match == True`
+        :param output_cost: multiplier for minimizing observation values after seed but
+            before target
         :param target_cost: multiplier for minimizing observation values at horizon
         :param control_cost: multiplier for minimizing overall control magnitude
         :param control_sparsity: amount of sparsity-inducing, L1 regularizer; only works
@@ -135,6 +140,7 @@ class DDController:
         self.exact_match = exact_match
         self.observation_match_cost = observation_match_cost
         self.control_match_cost = control_match_cost
+        self.output_cost = output_cost
         self.target_cost = target_cost
         self.control_cost = control_cost
         self.control_sparsity = control_sparsity
@@ -246,7 +252,10 @@ class DDController:
 
         n = end - l - p
 
-        ydim = 2 * p * d
+        if self.output_cost == 0:
+            ydim = 2 * p * d
+        else:
+            ydim = (p + l) * d
         # we need one fewer controls than observations
         udim = (p + l - 1) * c
         zdim = ydim + udim
@@ -267,11 +276,21 @@ class DDController:
                 Z[ui : ui + c] = ctrl[i : i + n].T
                 z[ui : ui + c] = ctrl[end + i - p][:, None]
 
-            yi = matchdim + i * d
-            Z[yi : yi + d] = obs[l + i : l + i + n].T
+        if self.control_cost == 0:
+            for i in range(p):
+                yi = matchdim + i * d
+                Z[yi : yi + d] = obs[l + i : l + i + n].T
+        else:
+            for i in range(p, l + p):
+                yi = matchdim + (i - p) * d
+                Z[yi : yi + d] = obs[i : i + n].T
 
+        if self.output_cost == 0:
+            startui = matchdim + p * d
+        else:
+            startui = matchdim + l * d
         for i in range(p - 1, p + l - 1):
-            ui = matchdim + p * d + (i - p + 1) * c
+            ui = startui + (i - p + 1) * c
             Z[ui : ui + c] = ctrl[i : i + n].T
 
         # average if needed
@@ -299,7 +318,9 @@ class DDController:
             Z_weighted[p * d : matchdim] *= self.control_match_cost
             z_weighted[p * d : matchdim] *= self.control_match_cost
 
-        Z_weighted[matchdim : matchdim + p * d] *= self.target_cost
+        if self.output_cost != 0:
+            Z_weighted[matchdim : startui - p * d] *= self.output_cost
+        Z_weighted[startui - p * d : startui] *= self.target_cost
         Z_weighted[-l * c :] *= self.control_cost
 
         return Z, z, Z_weighted, z_weighted
@@ -343,21 +364,37 @@ class DDController:
         """The minimal number of steps needed to calculate non-trivial control."""
         p = self.seed_length
         l = self.control_horizon
+        d = self.observation_dim
         c = self.control_dim
 
         if self.eager_start:
-            # we have a total dimension
-            #   zdim = 2 * p * d + (p + l - 1) * c
-            # and a number of constraints
-            #   matchdim = p * d + (p - 1) * c
-            # the number of non-constraint rows is
-            #   zdim - matchdim = p * d + l * c
-            # and the number of degrees of freedom is
-            #   zdim - 2 * matchdim = (l - p - 1) * c
+            if self.output_cost == 0:
+                # we have a total dimension
+                #   zdim = 2 * p * d + (p + l - 1) * c
+                # and a number of constraints
+                #   matchdim = p * d + (p - 1) * c
+                # the number of non-constraint rows is
+                #   zdim - matchdim = p * d + l * c
+                # and the number of degrees of freedom is
+                #   zdim - 2 * matchdim = (l - p - 1) * c
 
-            # end = len(obs) must equal l + p + n
-            # for rank reasons, I want n = (l - p - 1) * c
-            # end = l + p + (l - p - 1) * c
-            return l + p + (l - p - 1) * c
+                # end = len(obs) must equal l + p + n
+                # for rank reasons, I want n = (l - p - 1) * c
+                # end = l + p + (l - p - 1) * c
+                return l + p + (l - p - 1) * c
+            else:
+                # we have a total dimension
+                #   zdim = (p + l) * (d + c) - c
+                # and a number of constraints
+                #   matchdim = p * d + (p - 1) * c
+                # the number of non-constraint rows is
+                #   zdim - matchdim = l * (d + c)
+                # and the number of degrees of freedom is
+                #   zdim - 2 * matchdim = (l - p) * (d + c) + c
+
+                # end = len(obs) must equal l + p + n
+                # for rank reasons, I want n = (l - p) * (d + c) + c
+                # end = l + p + c + (l - p) * (d + c)
+                return l + p + c + (l - p) * (d + c)
         else:
             return self.history_length + p + l
