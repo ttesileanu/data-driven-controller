@@ -184,23 +184,21 @@ class DDController:
             # not enough data yet
             return torch.zeros((l, c), dtype=self.observation_history.dtype)
 
-        Z, _, Z_weighted, z_weighted = self.get_hankels()
+        # Z, _, Z_weighted, z_weighted = self.get_hankels()
+        Zm, Zp, Zm_weighted, Zp_weighted = self.get_hankels()
+        zm, zp, zm_weighted, zp_weighted = self.get_targets()
 
-        matchdim = p * d + (p - 1) * c
         if self.method == "lstsq":
             coeffs = lstsq_constrained(
-                Z_weighted[matchdim:],
-                z_weighted[matchdim:],
-                Z_weighted[:matchdim],
-                z_weighted[:matchdim],
+                Zp_weighted, zp_weighted, Zm_weighted, zm_weighted
             )
         elif self.method == "gd":
-            U_unk = Z[-l * c :]
+            U_unk = Zp[-l * c :]
             coeffs = lstsq_l1reg_constrained(
-                Z_weighted[matchdim:],
-                z_weighted[matchdim:],
-                Z_weighted[:matchdim],
-                z_weighted[:matchdim],
+                Zp_weighted,
+                zp_weighted,
+                Zm_weighted,
+                zm_weighted,
                 U_unk,
                 torch.zeros((l * c, 1), dtype=self.observation_history.dtype),
                 gamma=self.control_sparsity,
@@ -211,21 +209,26 @@ class DDController:
             raise ValueError(f"Unknown method: {self.method}")
 
         # now solve z = Z alpha
-        z_hat = Z @ coeffs
+        z_hat = Zp @ coeffs
 
         return z_hat[-l * c :].reshape((l, c))
 
     def get_hankels(
         self,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Calculate Hankel matrices.
+
+        :return: tuple `(Zm, Zp, Zm_weighted, Zp_weighted)`, where `m` stands for match
+            (in the seed region) and `p` stands for predict; weighted values are
+            weighted by the relevant costs
+        """
         p = self.seed_length
         l = self.control_horizon
 
         d = self.observation_dim
         c = self.control_dim
 
-        obs = self.observation_history
-        ctrl = self.control_history
+        obs, ctrl = self.get_past_trajectories()
 
         end = len(obs)
         assert len(ctrl) == end - 1
@@ -248,13 +251,11 @@ class DDController:
         for i in range(p):
             yi = i * d
             Z[yi : yi + d] = obs[i : i + n].T
-            z[yi : yi + d] = obs[end + i - p][:, None]
 
             if i < p - 1:
                 # we need one fewer controls than observations in the match region
                 ui = p * d + i * c
                 Z[ui : ui + c] = ctrl[i : i + n].T
-                z[ui : ui + c] = ctrl[end + i - p][:, None]
 
         if self.control_cost == 0:
             for i in range(p):
@@ -277,7 +278,7 @@ class DDController:
         if self.noise_handling == "average":
             n_columns = p * d + l * c
             if n < n_columns:
-                raise ValueError(f"history_length too short for noise averaging.")
+                raise ValueError(f"history too short for noise averaging.")
             bins = torch.linspace(0, n, n_columns + 1, dtype=int)
 
             Z0 = Z
@@ -289,14 +290,82 @@ class DDController:
 
         # weigh using the appropriate coefficients
         Z_weighted = Z.clone()
-        z_weighted = z.clone()
 
         if self.output_cost != 0:
             Z_weighted[matchdim : startui - p * d] *= self.output_cost
         Z_weighted[startui - p * d : startui] *= self.target_cost
         Z_weighted[-l * c :] *= self.control_cost
 
-        return Z, z, Z_weighted, z_weighted
+        Zm = Z[:matchdim]
+        Zp = Z[matchdim:]
+        Zm_weighted = Z_weighted[:matchdim]
+        Zp_weighted = Z_weighted[matchdim:]
+        return Zm, Zp, Zm_weighted, Zp_weighted
+
+    def get_past_trajectories(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get matrices of past observations and control.
+
+        These can be obtained either online (from the newest set of measurements) or
+        offline (from the time `self.freeze()` was called).
+
+        :return: tuple `(obs, ctrl)` of observations and controls
+        """
+        return self.observation_history, self.control_history
+
+    def get_targets(
+        self,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Calculate target values.
+
+        :return: tuple `(zm, zp, zm_weighted, zp_weighted)`, where `m` stands for match
+            (in the seed region) and `p` stands for predict; weighted values are
+            weighted by the relevant costs
+        """
+        p = self.seed_length
+        l = self.control_horizon
+
+        d = self.observation_dim
+        c = self.control_dim
+
+        obs = self.observation_history
+        ctrl = self.control_history
+
+        end = len(obs)
+        assert len(ctrl) == end - 1
+
+        n = end - l - p
+
+        if self.output_cost == 0:
+            ydim = 2 * p * d
+        else:
+            ydim = (p + l) * d
+        # we need one fewer controls than observations
+        udim = (p + l - 1) * c
+        zdim = ydim + udim
+        dtype = obs.dtype
+        # target y and target u are zero; we update the 'match' components below
+        z = torch.zeros((zdim, 1), dtype=dtype)
+
+        matchdim = p * d + (p - 1) * c
+        for i in range(p):
+            yi = i * d
+            z[yi : yi + d] = obs[end + i - p][:, None]
+
+            if i < p - 1:
+                # we need one fewer controls than observations in the match region
+                ui = p * d + i * c
+                z[ui : ui + c] = ctrl[end + i - p][:, None]
+
+        # weigh using the appropriate coefficients
+        # z_weighted = z.clone()
+        z_weighted = z
+
+        # return Z, z, Z_weighted, z_weighted
+        Zm = z[:matchdim]
+        Zp = z[matchdim:]
+        Zm_weighted = z_weighted[:matchdim]
+        Zp_weighted = z_weighted[matchdim:]
+        return Zm, Zp, Zm_weighted, Zp_weighted
 
     @property
     def minimal_history(self):
