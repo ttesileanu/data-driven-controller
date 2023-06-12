@@ -52,29 +52,18 @@ controller = DDController(
 )
 
 n_steps = 400
-control = torch.tensor([0.0])
-control_noise = 0.001
-outputs = []
-controls = []
+y = model.observe()[:, 0]
 for k in range(n_steps):
-    # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
-    y = model.run(control_plan=control[None, :])
+    controller.feed(y)
+    control_plan = controller.plan()
+    y = model.run(control_plan=control_plan[[0]])
     y = y[0, :, 0]
 
-    outputs.append(y)
-    controls.append(control)
+control_start = controller.minimal_history
 
-    controller.feed(y, control)
-    control_plan = controller.plan()
-    control = control_plan[0]
-
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
-
-outputs = torch.stack(outputs)
-controls = torch.stack(controls)
+outputs = torch.stack(controller.history.outputs)
+controls_prenoise = torch.stack(controller.history.controls_prenoise)
+controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
@@ -135,29 +124,18 @@ controller = DDController(
 )
 
 n_steps = 400
-control = torch.tensor([0.0])
-control_noise = 0.001
-outputs = []
-controls = []
+y = model.observe()[:, 0]
 for k in range(n_steps):
-    # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
-    y = model.run(control_plan=control[None, :])
+    controller.feed(y)
+    control_plan = controller.plan()
+    y = model.run(control_plan=control_plan[[0]])
     y = y[0, :, 0]
 
-    outputs.append(y)
-    controls.append(control)
+control_start = controller.minimal_history
 
-    controller.feed(y, control)
-    control_plan = controller.plan()
-    control = control_plan[0]
-
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
-
-outputs = torch.stack(outputs)
-controls = torch.stack(controls)
+outputs = torch.stack(controller.history.outputs)
+controls_prenoise = torch.stack(controller.history.controls_prenoise)
+controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
@@ -215,33 +193,18 @@ controller = DDController(
 )
 
 n_steps = 400
-control = torch.tensor([0.0])
-control_noise = 0.001
-outputs = []
-controls = []
-raw_controls = []
+y = model.observe()[:, 0]
 for k in range(n_steps):
-    raw_controls.append(control)
-
-    # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
-    y = model.run(control_plan=control[None, :])
+    controller.feed(y)
+    control_plan = controller.plan()
+    y = model.run(control_plan=control_plan[[0]])
     y = y[0, :, 0]
 
-    outputs.append(y)
-    controls.append(control)
+control_start = controller.minimal_history
 
-    controller.feed(y, control)
-    control_plan = controller.plan()
-    control = control_plan[0]
-
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
-
-outputs = torch.stack(outputs)
-controls = torch.stack(controls)
-raw_controls = torch.stack(raw_controls)
+outputs = torch.stack(controller.history.outputs)
+controls_prenoise = torch.stack(controller.history.controls_prenoise)
+controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
@@ -344,33 +307,18 @@ controller = DDController(
 )
 
 n_steps = 1000
-control = torch.tensor([0.0])
-control_noise = 0.001
-outputs = []
-controls = []
-raw_controls = []
+y = model.observe()[:, 0]
 for k in range(n_steps):
-    raw_controls.append(control)
-
-    # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
-    y = model.run(control_plan=control[None, :])
+    controller.feed(y)
+    control_plan = controller.plan()
+    y = model.run(control_plan=control_plan[[0]])
     y = y[0, :, 0]
 
-    outputs.append(y)
-    controls.append(control)
+control_start = controller.minimal_history
 
-    controller.feed(y, control)
-    control_plan = controller.plan()
-    control = control_plan[0]
-
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
-
-outputs = torch.stack(outputs)
-controls = torch.stack(controls)
-raw_controls = torch.stack(raw_controls)
+outputs = torch.stack(controller.history.outputs)
+controls_prenoise = torch.stack(controller.history.controls_prenoise)
+controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
@@ -408,7 +356,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
 with dv.FigureManager() as (_, ax):
     ax.axhline(0, c="gray", ls=":", lw=1)
     ax.axvline(0, c="gray", ls=":", lw=1)
-    ax.scatter(outputs[:-1], raw_controls[1:], s=10, alpha=0.7)
+    ax.scatter(outputs[:-1], controls_prenoise[1:], s=10, alpha=0.7)
     ax.set_xlabel("measurement $y_t$")
     ax.set_ylabel("control $u_t$")
 
@@ -473,33 +421,18 @@ controller = DDController(
 )
 
 n_steps = 1000
-control = torch.tensor([0.0])
-control_noise = 0.001
-outputs = []
-controls = []
-raw_controls = []
+y = model.observe()[:, 0]
 for k in range(n_steps):
-    raw_controls.append(control)
-
-    # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
-    y = model.run(control_plan=control[None, :])
+    controller.feed(y)
+    control_plan = controller.plan()
+    y = model.run(control_plan=control_plan[[0]])
     y = y[0, :, 0]
 
-    outputs.append(y)
-    controls.append(control)
+control_start = controller.minimal_history
 
-    controller.feed(y, control)
-    control_plan = controller.plan()
-    control = control_plan[0]
-
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
-
-outputs = torch.stack(outputs)
-controls = torch.stack(controls)
-raw_controls = torch.stack(raw_controls)
+outputs = torch.stack(controller.history.outputs)
+controls_prenoise = torch.stack(controller.history.controls_prenoise)
+controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
@@ -537,7 +470,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
 with dv.FigureManager() as (_, ax):
     ax.axhline(0, c="gray", ls=":", lw=1)
     ax.axvline(0, c="gray", ls=":", lw=1)
-    ax.scatter(outputs[:-1], raw_controls[1:], s=10, alpha=0.7)
+    ax.scatter(outputs[:-1], controls_prenoise[1:], s=10, alpha=0.7)
     ax.set_xlabel("measurement $y_t$")
     ax.set_ylabel("control $u_t$")
 
@@ -606,29 +539,18 @@ controller = DDController(
 )
 
 n_steps = 400
-control = torch.tensor([0.0])
-control_noise = 0.001
-outputs = []
-controls = []
+y = model.observe()[:, 0]
 for k in range(n_steps):
-    # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
-    y = model.run(control_plan=control[None, :])
+    controller.feed(y)
+    control_plan = controller.plan()
+    y = model.run(control_plan=control_plan[[0]])
     y = y[0, :, 0]
 
-    outputs.append(y)
-    controls.append(control)
+control_start = controller.minimal_history
 
-    controller.feed(y, control)
-    control_plan = controller.plan()
-    control = control_plan[0]
-
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
-
-outputs = torch.stack(outputs)
-controls = torch.stack(controls)
+outputs = torch.stack(controller.history.outputs)
+controls_prenoise = torch.stack(controller.history.controls_prenoise)
+controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
@@ -688,29 +610,18 @@ controller = DDController(
 )
 
 n_steps = 100
-control = torch.tensor([0.0])
-control_noise = 0.001
-outputs = []
-controls = []
+y = model.observe()[:, 0]
 for k in range(n_steps):
-    # need noise for exploration
-    control = control + control_noise * torch.randn(control.shape)
-    y = model.run(control_plan=control[None, :])
+    controller.feed(y)
+    control_plan = controller.plan()
+    y = model.run(control_plan=control_plan[[0]])
     y = y[0, :, 0]
 
-    outputs.append(y)
-    controls.append(control)
+control_start = controller.minimal_history
 
-    controller.feed(y, control)
-    control_plan = controller.plan()
-    control = control_plan[0]
-
-control_start = (
-    controller.history_length + controller.control_horizon + controller.seed_length
-)
-
-outputs = torch.stack(outputs)
-controls = torch.stack(controls)
+outputs = torch.stack(controller.history.outputs)
+controls_prenoise = torch.stack(controller.history.controls_prenoise)
+controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):

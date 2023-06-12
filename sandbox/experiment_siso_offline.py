@@ -1,5 +1,5 @@
 # %% [markdown]
-## Experiments with controlling SISO linear systems
+## Experiments with controlling SISO linear systems, offline method
 
 # %%
 # enable autoreload if we're running interactively
@@ -39,12 +39,13 @@ model = LinearSystem(
     initial_state=torch.tensor([[1.0]]),
 ).convert_type(torch.float64)
 history_length = 25
-control_horizon = 4
+control_horizon = 1
 controller = DDController(
     1,
     1,
     history_length,
     control_horizon=control_horizon,
+    offline=True,
 )
 
 n_steps = 200
@@ -105,12 +106,13 @@ model = LinearSystem(
     observation_noise=torch.tensor([[0.01]]),
 ).convert_type(torch.float64)
 history_length = 25
-control_horizon = 4
+control_horizon = 1
 controller = DDController(
     1,
     1,
     history_length,
     control_horizon=control_horizon,
+    offline=True,
 )
 
 n_steps = 200
@@ -170,18 +172,18 @@ model = LinearSystem(
     initial_state=torch.tensor([[1.0]]),
     observation_noise=torch.tensor([[0.1]]),
 ).convert_type(torch.float64)
-history_length = 25
-control_horizon = 4
+history_length = 30
+control_horizon = 1
 controller = DDController(
     1,
     1,
     history_length,
     control_horizon=control_horizon,
     noise_handling="average",
+    offline=True,
 )
 
 n_steps = 300
-control = torch.tensor([0.0], dtype=model.evolution.dtype)
 y = model.observe()[:, 0]
 for k in range(n_steps):
     controller.feed(y)
@@ -238,8 +240,8 @@ model = LinearSystem(
     initial_state=torch.tensor([[1.0]]),
     observation_noise=torch.tensor([[0.1]]),
 ).convert_type(torch.float64)
-history_length = 25
-control_horizon = 4
+history_length = 30
+control_horizon = 1
 controller = DDController(
     1,
     1,
@@ -250,6 +252,7 @@ controller = DDController(
     gd_lr=1e-3,
     gd_iterations=150,
     noise_handling="average",
+    offline=True,
 )
 
 n_steps = 300

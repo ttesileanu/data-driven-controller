@@ -1,6 +1,7 @@
 import torch
 
 from typing import Tuple
+from types import SimpleNamespace
 
 from .solvers import lstsq_constrained, lstsq_l1reg_constrained
 
@@ -23,6 +24,8 @@ class DDController:
         noise_handling: str = "none",
         eager_start: bool = False,
         offline: bool = False,
+        noise_strength: float = 0.02,
+        noise_policy: str = "online",
     ):
         """Data-driven controller.
 
@@ -115,6 +118,11 @@ class DDController:
             requested `history_length` has not been reached
         :param offline: if true, the model freezes itself as soon as it collected enough
             data
+        :param noise_strength: amount of noise to add to planned controls; this is
+            relative to the magnitude of the last registered output
+        :param noise_policy: when to add noise; can be:
+            "always":   online, offline, and warm-up
+            "online":   only during online and warm-up
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
@@ -130,6 +138,8 @@ class DDController:
         self.gd_iterations = gd_iterations
         self.noise_handling = noise_handling
         self.eager_start = eager_start
+        self.noise_strength = noise_strength
+        self.noise_policy = noise_policy
 
         if self.control_sparsity != 0:
             if self.method != "gd":
@@ -144,22 +154,29 @@ class DDController:
         self.offline = offline
         self.frozen = False
 
+        self.history = SimpleNamespace(outputs=[], controls_prenoise=[], controls=[])
+
         self._previous_coeffs = None
 
-    def feed(self, control: torch.Tensor, observation: torch.Tensor):
+    def feed(self, observation: torch.Tensor):
         """Register another measurement.
 
         The necessary number of samples is kept so that the Hankel matrices can have
         `self.history_length` columns.
 
-        The very first recorded control value is never used, so the history of control
-        values always has one element less than the history of observations.
+        Control values preceding the observations are automatically stored based on the
+        last output from `plan()`.
 
-        :param control: control input *preceding* the latest observation (output)
         :param observation: latest output from the model
         """
         assert len(observation) == self.observation_dim
-        assert len(control) == self.control_dim
+
+        self.history.outputs.append(observation.clone())
+
+        if len(self.history.controls) > 0:
+            control = self.history.controls[-1]
+        else:
+            control = torch.zeros(self.control_dim, dtype=observation.dtype)
 
         if self.observation_history is None:
             self.observation_history = observation.clone()
@@ -189,40 +206,62 @@ class DDController:
         l = self.control_horizon
         c = self.control_dim
         d = self.observation_dim
-        if len(self.observation_history) < self.minimal_history:
-            # not enough data yet
-            return torch.zeros((l, c), dtype=self.observation_history.dtype)
-        elif self.offline:
-            self.freeze()
 
-        # Z, _, Z_weighted, z_weighted = self.get_hankels()
-        Zm, Zp, Zm_weighted, Zp_weighted = self.get_hankels()
-        zm, zp, zm_weighted, zp_weighted = self.get_targets()
+        dtype = self.observation_history.dtype
 
-        if self.method == "lstsq":
-            coeffs = lstsq_constrained(
-                Zp_weighted, zp_weighted, Zm_weighted, zm_weighted
-            )
-        elif self.method == "gd":
-            U_unk = Zp[-l * c :]
-            coeffs = lstsq_l1reg_constrained(
-                Zp_weighted,
-                zp_weighted,
-                Zm_weighted,
-                zm_weighted,
-                U_unk,
-                torch.zeros((l * c, 1), dtype=self.observation_history.dtype),
-                gamma=self.control_sparsity,
-                lr=self.gd_lr,
-                max_iterations=self.gd_iterations,
-            )
+        if len(self.observation_history) >= self.minimal_history:
+            if self.offline:
+                self.freeze()
+
+            # Z, _, Z_weighted, z_weighted = self.get_hankels()
+            Zm, Zp, Zm_weighted, Zp_weighted = self.get_hankels()
+            zm, zp, zm_weighted, zp_weighted = self.get_targets()
+
+            if self.method == "lstsq":
+                coeffs = lstsq_constrained(
+                    Zp_weighted, zp_weighted, Zm_weighted, zm_weighted
+                )
+            elif self.method == "gd":
+                U_unk = Zp[-l * c :]
+                coeffs = lstsq_l1reg_constrained(
+                    Zp_weighted,
+                    zp_weighted,
+                    Zm_weighted,
+                    zm_weighted,
+                    U_unk,
+                    torch.zeros((l * c, 1), dtype=self.observation_history.dtype),
+                    gamma=self.control_sparsity,
+                    lr=self.gd_lr,
+                    max_iterations=self.gd_iterations,
+                )
+            else:
+                raise ValueError(f"Unknown method: {self.method}")
+
+            # now solve z = Z alpha
+            z_hat = Zp @ coeffs
+
+            control_plan_prenoise = z_hat[-l * c :].reshape((l, c))
         else:
-            raise ValueError(f"Unknown method: {self.method}")
+            control_plan_prenoise = torch.zeros((l, c), dtype=dtype)
 
-        # now solve z = Z alpha
-        z_hat = Zp @ coeffs
+        self.history.controls_prenoise.append(control_plan_prenoise[0])
 
-        return z_hat[-l * c :].reshape((l, c))
+        have_noise = self.noise_strength > 0
+        noise_policy = self.noise_policy == "always" or (
+            self.noise_policy == "online" and not self.frozen
+        )
+        if have_noise and noise_policy:
+            last_output = self.history.outputs[-1]
+            eps = self.noise_strength * (
+                2 * torch.rand(control_plan_prenoise.shape, dtype=dtype) - 1
+            )
+            noise = eps * torch.linalg.norm(last_output)
+            control_plan = control_plan_prenoise + noise
+        else:
+            control_plan = control_plan_prenoise
+
+        self.history.controls.append(control_plan[0])
+        return control_plan
 
     def get_hankels(
         self,
