@@ -139,7 +139,7 @@ def lstsq_l1reg(
     if m >= n:
         Sbar_inv = torch.diag(1 / S[:r])
     else:
-        Sbar_inv = torch.diag(torch.hstack((S[:r]), torch.ones(n - r, dype=S.dtype)))
+        Sbar_inv = torch.diag(torch.hstack((S[:r], torch.ones(n - r, dtype=S.dtype))))
 
     bbar = U[:, :r].T @ b
     Cbar = C @ Vh.T @ Sbar_inv
