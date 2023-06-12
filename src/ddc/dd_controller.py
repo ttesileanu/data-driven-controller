@@ -22,6 +22,7 @@ class DDController:
         gd_iterations: int = 50,
         noise_handling: str = "none",
         eager_start: bool = False,
+        offline: bool = False,
     ):
         """Data-driven controller.
 
@@ -112,6 +113,8 @@ class DDController:
         :param eager_start: if true, return non-trivial controls as soon as the minimal
             number of samples required for a solution are available, even if the
             requested `history_length` has not been reached
+        :param offline: if true, the model freezes itself as soon as it collected enough
+            data
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
@@ -134,6 +137,12 @@ class DDController:
 
         self.observation_history = None
         self.control_history = None
+
+        self.frozen_observation_history = None
+        self.frozen_control_history = None
+
+        self.offline = offline
+        self.frozen = False
 
         self._previous_coeffs = None
 
@@ -183,6 +192,8 @@ class DDController:
         if len(self.observation_history) < self.minimal_history:
             # not enough data yet
             return torch.zeros((l, c), dtype=self.observation_history.dtype)
+        elif self.offline:
+            self.freeze()
 
         # Z, _, Z_weighted, z_weighted = self.get_hankels()
         Zm, Zp, Zm_weighted, Zp_weighted = self.get_hankels()
@@ -310,7 +321,10 @@ class DDController:
 
         :return: tuple `(obs, ctrl)` of observations and controls
         """
-        return self.observation_history, self.control_history
+        if not self.frozen:
+            return self.observation_history, self.control_history
+        else:
+            return self.frozen_observation_history, self.frozen_control_history
 
     def get_targets(
         self,
@@ -366,6 +380,22 @@ class DDController:
         Zm_weighted = z_weighted[:matchdim]
         Zp_weighted = z_weighted[matchdim:]
         return Zm, Zp, Zm_weighted, Zp_weighted
+
+    def freeze(self):
+        """Freeze the model used by the controller."""
+        if not self.frozen:
+            self.frozen_control_history = self.control_history.clone()
+            self.frozen_observation_history = self.observation_history.clone()
+
+            self.frozen = True
+
+    def unfreeze(self):
+        """Unfreeze the model used by the controller."""
+        if self.frozen:
+            self.frozen_control_history = None
+            self.frozen_observation_history = None
+
+            self.frozen = False
 
     @property
     def minimal_history(self):
