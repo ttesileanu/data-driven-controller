@@ -113,6 +113,8 @@ class DDController:
         :param noise_handling: method for handling noisy data; can be
             "none":     assume noiseless observations
             "average":  average over samples; see above
+            "svd":      reduce the number of columns in the Hankels using an SVD
+                        (Zhang, Zheng, Li, 2022)
         :param eager_start: if true, return non-trivial controls as soon as the minimal
             number of samples required for a solution are available, even if the
             requested `history_length` has not been reached
@@ -335,6 +337,14 @@ class DDController:
             Z = torch.empty((zdim, n_columns), dtype=dtype)
             for i, (i0, i1) in enumerate(zip(bins, bins[1:])):
                 Z[:, i] = Z0[:, i0:i1].mean(dim=1)
+        elif self.noise_handling == "svd":
+            n_columns = p * d + l * c
+            if n < n_columns:
+                raise ValueError(f"history too short for SVD.")
+
+            Zu, Zsv, _ = torch.linalg.svd(Z, full_matrices=True)
+            Zs = torch.diag(Zsv)[:, :n_columns]
+            Z = Zu @ Zs
         elif self.noise_handling != "none":
             raise ValueError(f"Unknown noise handling method: {self.noise_handling}.")
 
