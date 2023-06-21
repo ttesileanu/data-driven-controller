@@ -1,9 +1,11 @@
 import torch
 
-from typing import Tuple
+from typing import Tuple, Optional
 from types import SimpleNamespace
 
 from .solvers import lstsq_constrained, lstsq_l1reg_constrained
+
+# TODO: affine system?
 
 
 class DDController:
@@ -11,23 +13,28 @@ class DDController:
         self,
         observation_dim: int,
         control_dim: int,
-        history_length: int,
         seed_length: int = 1,
         control_horizon: int = 1,
-        output_cost: float = 0.01,
-        target_cost: float = 0.01,
-        control_cost: float = 0.01,
+        state_dim: Optional[int] = None,
+        history_length: Optional[int] = None,
+        averaging_factor: float = 1.0,
+        output_cost: float = 1.0,
+        control_cost: float = 1.0,
         control_sparsity: float = 0.0,
+        seed_slack_cost: float = 0.0,
+        target_output: Optional[torch.Tensor] = None,
         method: str = "lstsq",
         gd_lr: float = 0.01,
         gd_iterations: int = 50,
         noise_handling: str = "none",
-        eager_start: bool = False,
         offline: bool = False,
         noise_strength: float = 0.02,
         noise_policy: str = "online",
     ):
         """Data-driven controller.
+
+        This is based on DeePC (Coulson et al., 2019), with some additions related to a
+        similar method we developed before learning of DeePC.
 
         This acts by leveraging the behavioral approach to dynamical systems: a system
         is identified by the fact that its possible trajectories are restricted to a
@@ -47,33 +54,48 @@ class DDController:
         sequence in the form of Hankel matrices -- and that is what we will be doing
         here.
 
-        In our case, we want to establish a control plan that maximally reduces the
-        magnitude of the observations after a certain horizon, using the earlier
-        measurements to predict the behavior of the system. To perform this prediction
-        we need to start with a "seed" where the observations and control are known --
-        the seed should be sufficiently long to fully specify the (unobserved) internal
-        state of the system.
+        The representation shown above works in general provided that the data sequence
+        is sufficiently diverse to sample the entire behavioral repertoire of the
+        syste. When using a single long sequence to form the matrices `Y` and `U`,
+        Willems' Lemma shows that the data-driven representations works as long as a
+        property called `persistency of excitation` holds. In our case, this condition
+        is related to a "tall" control Hankel matrix. Namely, if `U` has `l` rows, we
+        need to focus on a matrix `Uext` with `n + l` rows, where `n` is the
+        dimensionality of the (unobservable) system state. The data-driven
+        representation works as long as `Uext` has full row rank, `c * (n + l)` (where
+        `c` is the dimensionality of control).
+
+        Our goal is to establish a control plan that maximally reduces the magnitude of
+        the observations after a certain horizon, using the earlier measurements to
+        predict the behavior of the system. To perform this prediction we need to start
+        with a "seed" where the observations and control are known. The seed should be
+        sufficiently long to fully specify the (unobserved) internal system state.
 
         More specifically, suppose the system's state is fully identified by observing
         `seed_length` steps and suppose that we're trying to minimize the system's
-        output a number `control_horizon` of steps in the future. Since we want to make
-        sure that the full (unobserved) state of the system is under control, we also
-        evaluate the target output by summing over `seed_length` steps. The number of
-        prior samples used in the prediction is given by `history_length`.
+        output a number `control_horizon` of steps into the future. The number of prior
+        samples used in the prediction is given by `history_length`.
 
         The control planning is set up as an optimization problem where the coefficients
         `alpha` are inferred such that the following loss function is minimized, subject
         to a constraint:
 
-            L = (output_cost * (predicted observations between seed and horizon)) ** 2
-              + (target_cost * (predicted observations at horizon)) ** 2
-              + (control_cost * (predicted control after seed)) ** 2
-              + control_sparsity * L1_norm(predicted control after seed) ,
+            L = output_cost * (predicted observations) ** 2
+              + control_cost * (predicted control) ** 2
+              + control_sparsity * L1_norm(predicted control) ,
 
         subject to
 
             predicted - measured seed observations = 0 , and
             predicted - measured seed controls = 0 .
+
+        If observations are noisy, a certain amount of slack can be allowed in the seed
+        observations. This removes the first set of contraints above, and instead adds a
+        term
+
+            seed_slack_cost * (measured seed observations) ** 2
+
+        in the objective function.
 
         The inferred coefficients are then used to predict the optimal control. Note
         that apart from the L1 regularization term, this is just a least-squares
@@ -82,29 +104,36 @@ class DDController:
         By default the controller assumes that the dynamics is noiseless. If there is
         noise, the default controller will be suboptimal -- it will basically treat
         noise optimistically and assume that it will act in favor of stabilization. To
-        treat noise more appropriately, set `noise_handling` to `"average"`. This
-        averages over sets of columns of the Hankel matrices until the linear system
-        that is solved has the number of equations plus the number of constraints equal
-        to the number of unknowns. Specifically, the number of columns is set to
+        treat noise more appropriately, set `noise_handling` to `"average"` or `"svd"`.
+        The former averages over sets of columns of the Hankel matrices until the linear
+        system that is solved has the number of equations plus the number of constraints
+        equal to the number of unknowns. The `"svd"` option performs a similar
+        reduction, but using SVD instead of averaging (following Zhang, Zheng, Li, 2022).
 
-            n_columns = (control_horizon - seed_length - 1) * control_dim ,
+        Specifically, the number of columns is set to
 
-        and if `history_length > n_columns`, averaging is done until the number of
-        columns drops down to `n_columns`. (An exception is raised if `history_length`
-        is smaller than `n_columns`.)
+            n_columns = trajectory_length * control_dim + state_dim * (control_dim + 1),
+
+        where `trajectory_length = seed_length + control_horizon`.
 
         :param observation_dim: dimensionality of measurements
-        :param control_dim: dimensionality of control
-        :param history_length: number of columns to use in the Hankel matrices
-        :param seed_length: number of measurements needed to fully specify an internal
-            state
-        :param control_horizon: how far ahead to aim for reduced measurements
-        :param output_cost: multiplier for minimizing observation values after seed but
-            before target
-        :param target_cost: multiplier for minimizing observation values at horizon
-        :param control_cost: multiplier for minimizing overall control magnitude
-        :param control_sparsity: amount of sparsity-inducing, L1 regularizer; only works
-            when `method == "gd"`
+        :param control_dim: dimensionality of controls
+        :param seed_length: how many measurements are expected to fix internal state;
+            this is used to guess `state_dim` -- see below
+        :param control_horizon: how many measurements and controls to predict
+        :param state_dim: expected dimensionality of (unobserved) internal state; by
+            default this is set to `observation_dim * seed_length`
+        :param history_length: how many pairs of input/output samples to keep for
+            determining dynamics; by default this is calculated as: (see also below)
+                `int(self.minimal_history * averaging_factor)`
+        :param averaging_factor: ratio between the size of the history and the minimal
+            required number of samples; specifically, the history size is set to
+                `int(self.minimal_history * averaging_factor)`
+        :param output_cost: cost for difference between observations and target
+        :param control_cost: cost for non-zero control (L2 norm)
+        :param control_sparsity: L1 cost for control; only works when `method == "gd"`
+        :param seed_slack_cost: cost for noise in observations during seed region
+        :param target_output: target output value; default: zero
         :param method: can be
             "lstsq":    use `torch.linalg.lstsq`; does not support `control_sparsity`
             "gd":       gradient descent
@@ -115,11 +144,8 @@ class DDController:
             "average":  average over samples; see above
             "svd":      reduce the number of columns in the Hankels using an SVD
                         (Zhang, Zheng, Li, 2022)
-        :param eager_start: if true, return non-trivial controls as soon as the minimal
-            number of samples required for a solution are available, even if the
-            requested `history_length` has not been reached
-        :param offline: if true, the model freezes itself as soon as it collected enough
-            data
+        :param offline: if true, the model freezes itself as soon as `history_length` is
+            reached
         :param noise_strength: amount of noise to add to planned controls; this is
             relative to the magnitude of the last registered output
         :param noise_policy: when to add noise; can be:
@@ -128,18 +154,30 @@ class DDController:
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
-        self.history_length = history_length
         self.seed_length = seed_length
         self.control_horizon = control_horizon
+
+        if state_dim is None:
+            self.state_dim = self.observation_dim * self.seed_length
+        else:
+            self.state_dim = state_dim
+
+        self.averaging_factor = averaging_factor
+        if history_length is None:
+            self.history_length = int(self.minimal_history * averaging_factor)
+        else:
+            self.history_length = history_length
+
         self.output_cost = output_cost
-        self.target_cost = target_cost
         self.control_cost = control_cost
         self.control_sparsity = control_sparsity
+        self.seed_slack_cost = seed_slack_cost
+        self.target_output = target_output
         self.method = method
         self.gd_lr = gd_lr
         self.gd_iterations = gd_iterations
         self.noise_handling = noise_handling
-        self.eager_start = eager_start
+        self.offline = offline
         self.noise_strength = noise_strength
         self.noise_policy = noise_policy
 
@@ -153,18 +191,14 @@ class DDController:
         self.frozen_observation_history = None
         self.frozen_control_history = None
 
-        self.offline = offline
         self.frozen = False
 
         self.history = SimpleNamespace(outputs=[], controls_prenoise=[], controls=[])
 
-        self._previous_coeffs = None
-
     def feed(self, observation: torch.Tensor):
         """Register another measurement.
 
-        The necessary number of samples is kept so that the Hankel matrices can have
-        `self.history_length` columns.
+        Up to `self.history_length` samples are kept.
 
         Control values preceding the observations are automatically stored based on the
         last output from `plan()`.
@@ -191,47 +225,41 @@ class DDController:
         else:
             self.control_history = torch.vstack((self.control_history, control))
 
-        n = self.history_length + self.control_horizon + self.seed_length
-        assert n > 1
-
-        self.observation_history = self.observation_history[-n:]
-
-        n_ctrl = len(self.observation_history) - 1
-        self.control_history = self.control_history[-n_ctrl:]
+        self.observation_history = self.observation_history[-self.history_length :]
+        self.control_history = self.control_history[-self.history_length :]
 
     def plan(self) -> torch.Tensor:
         """Estimate optimal control plan given the current history.
 
         :return: control plan, shape `(control_horizon, control_dim)`
         """
-        p = self.seed_length
-        l = self.control_horizon
+        h = self.control_horizon
         c = self.control_dim
-        d = self.observation_dim
 
         dtype = self.observation_history.dtype
 
-        if len(self.observation_history) >= self.minimal_history:
+        if len(self.observation_history) >= self.history_length:
             if self.offline:
                 self.freeze()
 
-            # Z, _, Z_weighted, z_weighted = self.get_hankels()
             Zm, Zp, Zm_weighted, Zp_weighted = self.get_hankels()
             zm, zp, zm_weighted, zp_weighted = self.get_targets()
+
+            U_unk = Zp[-h * c :]
+            u_unk = zp[-h * c :]
 
             if self.method == "lstsq":
                 coeffs = lstsq_constrained(
                     Zp_weighted, zp_weighted, Zm_weighted, zm_weighted
                 )
             elif self.method == "gd":
-                U_unk = Zp[-l * c :]
                 coeffs = lstsq_l1reg_constrained(
                     Zp_weighted,
                     zp_weighted,
                     Zm_weighted,
                     zm_weighted,
                     U_unk,
-                    torch.zeros((l * c, 1), dtype=self.observation_history.dtype),
+                    u_unk,
                     gamma=self.control_sparsity,
                     lr=self.gd_lr,
                     max_iterations=self.gd_iterations,
@@ -240,11 +268,11 @@ class DDController:
                 raise ValueError(f"Unknown method: {self.method}")
 
             # now solve z = Z alpha
-            z_hat = Zp @ coeffs
+            u_hat = U_unk @ coeffs
 
-            control_plan_prenoise = z_hat[-l * c :].reshape((l, c))
+            control_plan_prenoise = u_hat.reshape((h, c))
         else:
-            control_plan_prenoise = torch.zeros((l, c), dtype=dtype)
+            control_plan_prenoise = torch.zeros((h, c), dtype=dtype)
 
         self.history.controls_prenoise.append(control_plan_prenoise[0])
 
@@ -272,10 +300,11 @@ class DDController:
 
         :return: tuple `(Zm, Zp, Zm_weighted, Zp_weighted)`, where `m` stands for match
             (in the seed region) and `p` stands for predict; weighted values are
-            weighted by the relevant costs
+            weighted by the (square roots of the) relevant costs
         """
         p = self.seed_length
-        l = self.control_horizon
+        h = self.control_horizon
+        l = p + h
 
         d = self.observation_dim
         c = self.control_dim
@@ -283,78 +312,68 @@ class DDController:
         obs, ctrl = self.get_past_trajectories()
 
         end = len(obs)
-        assert len(ctrl) == end - 1
+        assert len(ctrl) == end
 
-        n = end - l - p
-
-        if self.output_cost == 0:
-            ydim = 2 * p * d
-        else:
-            ydim = (p + l) * d
-        # we need one fewer controls than observations
-        udim = (p + l - 1) * c
-        zdim = ydim + udim
+        # populate Hankels
+        n = end - l + 1
         dtype = obs.dtype
-        Z = torch.empty((zdim, n), dtype=dtype)
-        # target y and target u are zero; we update the 'match' components below
-        z = torch.zeros((zdim, 1), dtype=dtype)
-
-        matchdim = p * d + (p - 1) * c
-        for i in range(p):
+        Y = torch.empty((l * d, n), dtype=dtype)
+        U = torch.empty((l * c, n), dtype=dtype)
+        for i in range(l):
             yi = i * d
-            Z[yi : yi + d] = obs[i : i + n].T
+            Y[yi : yi + d] = obs[i : i + n].T
 
-            if i < p - 1:
-                # we need one fewer controls than observations in the match region
-                ui = p * d + i * c
-                Z[ui : ui + c] = ctrl[i : i + n].T
+            ui = i * c
+            U[ui : ui + c] = ctrl[i : i + n].T
 
-        if self.control_cost == 0:
-            for i in range(p):
-                yi = matchdim + i * d
-                Z[yi : yi + d] = obs[l + i : l + i + n].T
-        else:
-            for i in range(p, l + p):
-                yi = matchdim + (i - p) * d
-                Z[yi : yi + d] = obs[i : i + n].T
+        Uini = U[: p * c]
+        Yini = Y[: p * d]
+        Ypred = Y[p * d :]
+        Upred = U[p * c :]
+        Z = torch.vstack((Uini, Yini, Ypred, Upred))
 
-        if self.output_cost == 0:
-            startui = matchdim + p * d
-        else:
-            startui = matchdim + l * d
-        for i in range(p - 1, p + l - 1):
-            ui = startui + (i - p + 1) * c
-            Z[ui : ui + c] = ctrl[i : i + n].T
-
-        # average if needed
-        if self.noise_handling == "average":
-            n_columns = p * d + l * c
+        # reduce if needed
+        if self.noise_handling != "none":
+            n_columns = l * c + self.state_dim * (c + 1)
             if n < n_columns:
-                raise ValueError(f"history too short for noise averaging.")
-            bins = torch.linspace(0, n, n_columns + 1, dtype=int)
+                raise ValueError(f"history too short for {self.noise_handling}.")
 
             Z0 = Z
-            Z = torch.empty((zdim, n_columns), dtype=dtype)
-            for i, (i0, i1) in enumerate(zip(bins, bins[1:])):
-                Z[:, i] = Z0[:, i0:i1].mean(dim=1)
-        elif self.noise_handling == "svd":
-            n_columns = p * d + l * c
-            if n < n_columns:
-                raise ValueError(f"history too short for SVD.")
+            if self.noise_handling == "average":
+                bins = torch.linspace(0, n, n_columns + 1, dtype=int)
 
-            Zu, Zsv, _ = torch.linalg.svd(Z, full_matrices=True)
-            Zs = torch.diag(Zsv)[:, :n_columns]
-            Z = Zu @ Zs
-        elif self.noise_handling != "none":
-            raise ValueError(f"Unknown noise handling method: {self.noise_handling}.")
+                Z = torch.empty((len(Z), n_columns), dtype=dtype)
+                for i, (i0, i1) in enumerate(zip(bins, bins[1:])):
+                    Z[:, i] = Z0[:, i0:i1].mean(dim=1)
+            elif self.noise_handling == "svd":
+                if n < n_columns:
+                    raise ValueError(f"history too short for SVD.")
+
+                Zu, Zsv, _ = torch.linalg.svd(Z, full_matrices=True)
+                Zs = torch.diag(Zsv)[:, :n_columns]
+                Z = Zu @ Zs
+            else:
+                raise ValueError(
+                    f"Unknown noise handling method: {self.noise_handling}."
+                )
+
+            # make sure the size of Z makes sense
+            assert len(Z) == len(Z0)
+            assert Z.shape[1] == n_columns
 
         # weigh using the appropriate coefficients
         Z_weighted = Z.clone()
 
-        if self.output_cost != 0:
-            Z_weighted[matchdim : startui - p * d] *= self.output_cost
-        Z_weighted[startui - p * d : startui] *= self.target_cost
-        Z_weighted[-l * c :] *= self.control_cost
+        out_coeff = self.output_cost**0.5
+        ctrl_coeff = self.control_cost**0.5
+        matchdim = p * (c + d)
+        Z_weighted[matchdim : matchdim + h * d] *= out_coeff
+        Z_weighted[-h * c :] *= ctrl_coeff
+
+        # handle seed slack cost, if any
+        if self.seed_slack_cost > 0:
+            Z_weighted[p * c : p * (c + d)] *= self.seed_slack_cost
+            matchdim = p * c
 
         Zm = Z[:matchdim]
         Zp = Z[matchdim:]
@@ -385,7 +404,8 @@ class DDController:
             weighted by the relevant costs
         """
         p = self.seed_length
-        l = self.control_horizon
+        h = self.control_horizon
+        l = p + h
 
         d = self.observation_dim
         c = self.control_dim
@@ -394,41 +414,47 @@ class DDController:
         ctrl = self.control_history
 
         end = len(obs)
-        assert len(ctrl) == end - 1
+        assert len(ctrl) == end
 
-        n = end - l - p
-
-        if self.output_cost == 0:
-            ydim = 2 * p * d
-        else:
-            ydim = (p + l) * d
-        # we need one fewer controls than observations
-        udim = (p + l - 1) * c
-        zdim = ydim + udim
         dtype = obs.dtype
-        # target y and target u are zero; we update the 'match' components below
-        z = torch.zeros((zdim, 1), dtype=dtype)
+        y = torch.zeros((l * d, 1), dtype=dtype)
+        u = torch.zeros((l * c, 1), dtype=dtype)
 
-        matchdim = p * d + (p - 1) * c
+        # initial values
         for i in range(p):
             yi = i * d
-            z[yi : yi + d] = obs[end + i - p][:, None]
+            y[yi : yi + d] = obs[end + i - p][:, None]
 
-            if i < p - 1:
-                # we need one fewer controls than observations in the match region
-                ui = p * d + i * c
-                z[ui : ui + c] = ctrl[end + i - p][:, None]
+            ui = i * c
+            u[ui : ui + c] = ctrl[end + i - p][:, None]
+
+        # target values -- zero for control, but potentially non-zero for output
+        if self.target_output is not None:
+            for i in range(p, l):
+                yi = i * d
+                y[yi : yi + d] = self.target_output
+
+        uini = u[: p * c]
+        yini = y[: p * d]
+        ypred = y[p * d :]
+        upred = u[p * c :]
+        z = torch.vstack((uini, yini, ypred, upred))
 
         # weigh using the appropriate coefficients
-        # z_weighted = z.clone()
-        z_weighted = z
+        z_weighted = z.clone()
 
-        # return Z, z, Z_weighted, z_weighted
-        Zm = z[:matchdim]
-        Zp = z[matchdim:]
-        Zm_weighted = z_weighted[:matchdim]
-        Zp_weighted = z_weighted[matchdim:]
-        return Zm, Zp, Zm_weighted, Zp_weighted
+        # handle seed slack cost, if any
+        if self.seed_slack_cost > 0:
+            z_weighted[p * c : p * (c + d)] *= self.seed_slack_cost
+            matchdim = p * c
+        else:
+            matchdim = p * (c + d)
+
+        zm = z[:matchdim]
+        zp = z[matchdim:]
+        zm_weighted = z_weighted[:matchdim]
+        zp_weighted = z_weighted[matchdim:]
+        return zm, zp, zm_weighted, zp_weighted
 
     def freeze(self):
         """Freeze the model used by the controller."""
@@ -448,40 +474,17 @@ class DDController:
 
     @property
     def minimal_history(self):
-        """The minimal number of steps needed to calculate non-trivial control."""
+        """The minimal number of steps needed to achieve the required persistency of
+        excitation necessary for control.
+
+        This is a guess based on the given dimensionality of the internal state of the
+        system, and assuming the system to be controllable.
+        """
         p = self.seed_length
-        l = self.control_horizon
+        h = self.control_horizon
+        l = p + h
         d = self.observation_dim
         c = self.control_dim
+        n = self.state_dim
 
-        if self.eager_start:
-            if self.output_cost == 0:
-                # we have a total dimension
-                #   zdim = 2 * p * d + (p + l - 1) * c
-                # and a number of constraints
-                #   matchdim = p * d + (p - 1) * c
-                # the number of non-constraint rows is
-                #   zdim - matchdim = p * d + l * c
-                # and the number of degrees of freedom is
-                #   zdim - 2 * matchdim = (l - p - 1) * c
-
-                # end = len(obs) must equal l + p + n
-                # for rank reasons, I want n = (l - p - 1) * c
-                # end = l + p + (l - p - 1) * c
-                return l + p + (l - p - 1) * c
-            else:
-                # we have a total dimension
-                #   zdim = (p + l) * (d + c) - c
-                # and a number of constraints
-                #   matchdim = p * d + (p - 1) * c
-                # the number of non-constraint rows is
-                #   zdim - matchdim = l * (d + c)
-                # and the number of degrees of freedom is
-                #   zdim - 2 * matchdim = (l - p) * (d + c) + c
-
-                # end = len(obs) must equal l + p + n
-                # for rank reasons, I want n = (l - p) * (d + c) + c
-                # end = l + p + c + (l - p) * (d + c)
-                return l + p + c + (l - p) * (d + c)
-        else:
-            return self.history_length + p + l
+        return (c + 1) * (n + l) - 1
