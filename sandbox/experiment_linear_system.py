@@ -2,21 +2,12 @@
 ## Experiments with controlling linear systems
 
 # %%
-# enable autoreload if we're running interactively
+# enable autoreload
+from IPython import get_ipython
 
-import sys
-
-if hasattr(sys, "ps1"):
-    try:
-        from IPython import get_ipython
-
-        ipython = get_ipython()
-        ipython.run_line_magic("load_ext", "autoreload")
-        ipython.run_line_magic("autoreload", "2")
-
-        print("autoreload active")
-    except ModuleNotFoundError:
-        pass
+ipython = get_ipython()
+ipython.run_line_magic("load_ext", "autoreload")
+ipython.run_line_magic("autoreload", "2")
 
 # %%
 import torch
@@ -375,12 +366,11 @@ model = LinearSystem(
     control=torch.tensor([[1.0]]),
     initial_state=torch.tensor([[1.0]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     1,
     1,
-    history_length,
+    averaging_factor=4.0,
     control_horizon=control_horizon,
     noise_handling="average",
 )
@@ -441,12 +431,11 @@ model = LinearSystem(
     control=torch.tensor([[1.0], [-0.3]]),
     initial_state=torch.tensor([[1.0], [0.5]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     2,
     1,
-    history_length,
+    averaging_factor=4.0,
     control_horizon=control_horizon,
     noise_handling="average",
 )
@@ -514,12 +503,11 @@ model = LinearSystem(
     observation_noise=torch.tensor([[0.1, 0.0], [0.0, 0.2]]),
     initial_state=torch.tensor([[1.0], [0.5]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     2,
     1,
-    history_length,
+    averaging_factor=4.0,
     control_horizon=control_horizon,
     noise_handling="average",
 )
@@ -605,12 +593,11 @@ model = LinearSystem(
     state_noise=torch.tensor([[0.05, 0.0], [0.0, 0.1]]),
     initial_state=torch.tensor([[1.0], [0.5]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     2,
     1,
-    history_length,
+    averaging_factor=4.0,
     control_horizon=control_horizon,
     noise_handling="average",
 )
@@ -699,12 +686,11 @@ model = LinearSystem(
     state_noise=torch.tensor([[0.05, 0.0], [0.0, 0.1]]),
     initial_state=torch.tensor([[1.0], [0.5]]),
 )
-history_length = 25
 control_horizon = 8
 controller = DDController(
     1,
     1,
-    history_length,
+    averaging_factor=4.0,
     seed_length=2,
     control_horizon=control_horizon,
     noise_handling="average",
@@ -774,12 +760,11 @@ model = LinearSystem(
     state_noise=torch.tensor([[0.05, 0.0], [0.0, 0.1]]),
     initial_state=torch.tensor([[1.0], [0.5]]),
 )
-history_length = 25
 control_horizon = 8
 controller = DDController(
     1,
     1,
-    history_length,
+    averaging_factor=4.0,
     seed_length=2,
     control_horizon=control_horizon,
     noise_handling="average",

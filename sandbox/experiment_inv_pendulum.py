@@ -192,7 +192,7 @@ controller = DDController(
     history_length,
     seed_length=2,
     control_horizon=control_horizon,
-    noise_handling="average",
+    noise_handling="svd",
     output_cost=0.1,
 )
 

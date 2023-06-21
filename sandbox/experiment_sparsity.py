@@ -2,21 +2,12 @@
 # # Experiments with sparse controllers
 
 # %%
-# enable autoreload if we're running interactively
+# enable autoreload
+from IPython import get_ipython
 
-import sys
-
-if hasattr(sys, "ps1"):
-    try:
-        from IPython import get_ipython
-
-        ipython = get_ipython()
-        ipython.run_line_magic("load_ext", "autoreload")
-        ipython.run_line_magic("autoreload", "2")
-
-        print("autoreload active")
-    except ModuleNotFoundError:
-        pass
+ipython = get_ipython()
+ipython.run_line_magic("load_ext", "autoreload")
+ipython.run_line_magic("autoreload", "2")
 
 # %%
 import torch
@@ -40,15 +31,14 @@ model = LinearSystem(
     state_noise=torch.tensor([[0.05]]),
     observation_noise=torch.tensor([[0.05]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     1,
     1,
-    history_length,
     control_horizon=control_horizon,
     control_cost=0,
-    target_cost=0.1,
+    noise_handling="average",
+    averaging_factor=4.0,
 )
 
 n_steps = 400
@@ -109,15 +99,14 @@ model = LinearSystem(
     state_noise=torch.tensor([[0.05]]),
     observation_noise=torch.tensor([[0.05]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     1,
     1,
-    history_length,
     control_horizon=control_horizon,
-    control_cost=0,
-    target_cost=0.1,
+    control_cost=1e-6,
+    noise_handling="average",
+    averaging_factor=4.0,
     method="gd",
     gd_lr=1e-5,
     gd_iterations=75,
@@ -181,15 +170,13 @@ model = LinearSystem(
     state_noise=torch.tensor([[0.05]]),
     observation_noise=torch.tensor([[0.05]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     1,
     1,
-    history_length,
     control_horizon=control_horizon,
-    control_cost=0.01,
-    target_cost=0.1,
+    noise_handling="average",
+    averaging_factor=4.0,
 )
 
 n_steps = 400
@@ -242,7 +229,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
 with dv.FigureManager() as (_, ax):
     ax.axhline(0, c="gray", ls=":", lw=1)
     ax.axvline(0, c="gray", ls=":", lw=1)
-    ax.scatter(outputs[:-1], raw_controls[1:], s=10, alpha=0.7)
+    ax.scatter(outputs[:-1], controls_prenoise[1:], s=10, alpha=0.7)
     ax.set_xlabel("measurement $y_t$")
     ax.set_ylabel("control $u_t$")
 
@@ -295,15 +282,13 @@ model = LinearSystem(
     initial_state=torch.tensor([[1.0]]),
     observation_noise=torch.tensor([[0.05]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     1,
     1,
-    history_length,
     control_horizon=control_horizon,
-    control_cost=0.01,
-    target_cost=0.1,
+    noise_handling="average",
+    averaging_factor=4.0,
 )
 
 n_steps = 1000
@@ -409,15 +394,13 @@ model = LinearSystem(
     initial_state=torch.tensor([[1.0]]),
     observation_noise=torch.tensor([[0.05]]),
 )
-history_length = 25
 control_horizon = 2
 controller = DDController(
     1,
     1,
-    history_length,
     control_horizon=control_horizon,
-    control_cost=0.01,
-    target_cost=0.1,
+    noise_handling="average",
+    averaging_factor=4.0,
 )
 
 n_steps = 1000
@@ -524,15 +507,13 @@ model = LinearSystem(
     state_noise=torch.tensor([[0.05]]),
     observation_noise=torch.tensor([[0.05]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     1,
     1,
-    history_length,
     control_horizon=control_horizon,
-    control_cost=0.01,
-    target_cost=0.1,
+    noise_handling="average",
+    averaging_factor=4.0,
     method="gd",
     gd_lr=1e-6,
     gd_iterations=75,
@@ -594,16 +575,14 @@ model = LinearSystem(
     control=torch.tensor([[1.0]]),
     initial_state=torch.tensor([[1.0]]),
 )
-history_length = 25
 control_horizon = 5
 controller = DDController(
     1,
     1,
-    history_length,
     control_horizon=control_horizon,
-    control_cost=0.01,
-    target_cost=0.1,
     control_sparsity=5.0,
+    noise_handling="average",
+    averaging_factor=4.0,
     method="gd",
     gd_lr=1e-4,
     gd_iterations=75,
