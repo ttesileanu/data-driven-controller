@@ -4,19 +4,11 @@
 # %%
 # enable autoreload if we're running interactively
 
-import sys
+from IPython import get_ipython
 
-if hasattr(sys, "ps1"):
-    try:
-        from IPython import get_ipython
-
-        ipython = get_ipython()
-        ipython.run_line_magic("load_ext", "autoreload")
-        ipython.run_line_magic("autoreload", "2")
-
-        print("autoreload active")
-    except ModuleNotFoundError:
-        pass
+ipython = get_ipython()
+ipython.run_line_magic("load_ext", "autoreload")
+ipython.run_line_magic("autoreload", "2")
 
 # %%
 import torch
@@ -33,20 +25,20 @@ from ddc import DDController
 
 # %%
 torch.manual_seed(42)
-history_length = 12
-control_horizon = 4
+control_horizon = 6
 controller = DDController(
     1,
     1,
-    history_length,
-    seed_length=2,
+    seed_length=4,
+    averaging_factor=2.0,
     control_horizon=control_horizon,
     noise_handling="average",
-    output_cost=0.1,
+    noise_strength=0.02,
+    output_cost=250.0,
 )
 
-n_steps = 1200
-dt = 0.05
+n_steps = 2500
+dt = 0.01
 
 # initial state
 phi = 3.0
@@ -61,7 +53,7 @@ for k in range(n_steps):
     omega += dt * (np.sin(phi) + control_plan[0].item())
     phi += dt * omega
 
-control_start = controller.minimal_history
+control_start = controller.history_length
 
 outputs = torch.stack(controller.history.outputs)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
@@ -108,16 +100,15 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
 
 # %%
 torch.manual_seed(42)
-history_length = 12
-control_horizon = 4
+control_horizon = 6
 controller = DDController(
     1,
     1,
-    history_length,
-    seed_length=2,
+    seed_length=4,
+    averaging_factor=3.0,
     control_horizon=control_horizon,
     noise_handling="average",
-    output_cost=0.1,
+    output_cost=100.0,
     offline=True,
 )
 
@@ -137,7 +128,7 @@ for k in range(n_steps):
     omega += dt * (np.sin(phi) + control_plan[0].item())
     phi += dt * omega
 
-control_start = controller.minimal_history
+control_start = controller.history_length
 
 outputs = torch.stack(controller.history.outputs)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
@@ -184,19 +175,18 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
 
 # %%
 torch.manual_seed(42)
-history_length = 12
-control_horizon = 8
+control_horizon = 10
 controller = DDController(
     1,
     1,
-    history_length,
-    seed_length=2,
+    seed_length=4,
+    averaging_factor=3.0,
     control_horizon=control_horizon,
     noise_handling="svd",
-    output_cost=0.1,
+    output_cost=100.0,
 )
 
-n_steps = 200
+n_steps = 1500
 dt = 0.05
 
 # initial state
@@ -212,7 +202,7 @@ for k in range(n_steps):
     omega += dt * (np.sin(phi) + control_plan[0].item())
     phi += dt * omega
 
-control_start = controller.minimal_history
+control_start = controller.history_length
 
 outputs = torch.stack(controller.history.outputs)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
@@ -259,20 +249,19 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
 
 # %%
 torch.manual_seed(42)
-history_length = 12
-control_horizon = 8
+control_horizon = 10
 controller = DDController(
     1,
     1,
-    history_length,
-    seed_length=2,
+    seed_length=4,
+    averaging_factor=3.0,
     control_horizon=control_horizon,
     noise_handling="average",
-    output_cost=0.1,
+    output_cost=100.0,
     offline=True,
 )
 
-n_steps = 200
+n_steps = 1500
 dt = 0.05
 
 # initial state
@@ -288,7 +277,7 @@ for k in range(n_steps):
     omega += dt * (np.sin(phi) + control_plan[0].item())
     phi += dt * omega
 
-control_start = controller.minimal_history
+control_start = controller.history_length
 
 outputs = torch.stack(controller.history.outputs)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
