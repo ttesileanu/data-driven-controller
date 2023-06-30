@@ -30,22 +30,34 @@ def lstsq_constrained(
     assert v.shape[0] == m
     assert m <= n
 
-    Q, R = torch.linalg.qr(M.T, mode="complete")
-    ystar = torch.linalg.solve_triangular(R[:m].T, v, upper=False)
+    # Q, R = torch.linalg.qr(M.T, mode="complete")
+    # ystar = torch.linalg.solve_triangular(R[:m].T, v, upper=False)
 
-    # XXX should check that there was a solution
+    # # XXX should check that there was a solution
 
-    Atilde = A @ Q[:, m:]
-    x0star = Q[:, :m] @ ystar
-    btilde = b - A @ x0star
+    # Atilde = A @ Q[:, m:]
+    # x0star = Q[:, :m] @ ystar
+    # btilde = b - A @ x0star
 
-    results = torch.linalg.lstsq(Atilde, btilde)
-    zstar = results.solution
+    # results = torch.linalg.lstsq(Atilde, btilde)
+    # zstar = results.solution
+
+    # # XXX should check that there was a solution
+    # # XXX should report whether the solution was unique?
+
+    # xstar = x0star + Q[:, m:] @ zstar
+
+    top_row = torch.hstack((A.T @ A, M.T))
+    zero = torch.zeros(len(M), len(M), dtype=M.dtype)
+    bottom_row = torch.hstack((M, zero))
+    extended_A = torch.vstack((top_row, bottom_row))
+    extended_b = torch.vstack((A.T @ b, v))
+    zstar = torch.linalg.solve(extended_A, extended_b)
 
     # XXX should check that there was a solution
     # XXX should report whether the solution was unique?
 
-    xstar = x0star + Q[:, m:] @ zstar
+    xstar = zstar[: len(top_row)]
     return xstar
 
 
