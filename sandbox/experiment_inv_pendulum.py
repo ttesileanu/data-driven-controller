@@ -29,13 +29,14 @@ control_horizon = 4
 controller = DDController(
     1,
     1,
-    seed_length=4,
+    seed_length=2,
     averaging_factor=2.0,
     control_horizon=control_horizon,
     noise_handling="none",
-    l2_regularization=0.5,
+    l2_regularization=1.0,
     noise_strength=0.02,
-    output_cost=25.0,
+    output_cost=250.0,
+    affine=True,
 )
 
 n_steps = 1250
@@ -110,7 +111,7 @@ controller = DDController(
     control_horizon=control_horizon,
     noise_handling="none",
     l2_regularization=0.1,
-    output_cost=100.0,
+    output_cost=250.0,
     offline=True,
 )
 
@@ -181,12 +182,13 @@ control_horizon = 10
 controller = DDController(
     1,
     1,
-    seed_length=4,
+    seed_length=2,
     averaging_factor=3.0,
     control_horizon=control_horizon,
     noise_handling="none",
     l2_regularization=0.1,
-    output_cost=100.0,
+    output_cost=250.0,
+    affine=True,
 )
 
 n_steps = 1500
@@ -256,13 +258,14 @@ control_horizon = 10
 controller = DDController(
     1,
     1,
-    seed_length=4,
+    seed_length=2,
     averaging_factor=3.0,
     control_horizon=control_horizon,
     noise_handling="none",
     l2_regularization=1.0,
-    output_cost=100.0,
+    output_cost=250.0,
     offline=True,
+    affine=True,
 )
 
 n_steps = 1500
