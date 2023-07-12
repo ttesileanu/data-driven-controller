@@ -30,6 +30,7 @@ class DDController:
         offline: bool = False,
         noise_strength: float = 0.02,
         noise_policy: str = "online",
+        l2_regularization: float = 0.0,
     ):
         """Data-driven controller.
 
@@ -151,6 +152,7 @@ class DDController:
         :param noise_policy: when to add noise; can be:
             "always":   online, offline, and warm-up
             "online":   only during online and warm-up
+        :param l2_regularization: amount of L2 regularization to add
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
@@ -180,6 +182,10 @@ class DDController:
         self.offline = offline
         self.noise_strength = noise_strength
         self.noise_policy = noise_policy
+        self.l2_regularization = l2_regularization
+
+        if self.l2_regularization != 0.0 and self.method != "lstsq":
+            raise ValueError("l2_regularization only works with `method=lstsq`")
 
         if self.control_sparsity != 0:
             if self.method != "gd":
@@ -250,7 +256,11 @@ class DDController:
 
             if self.method == "lstsq":
                 coeffs = lstsq_constrained(
-                    Zp_weighted, zp_weighted, Zm_weighted, zm_weighted
+                    Zp_weighted,
+                    zp_weighted,
+                    Zm_weighted,
+                    zm_weighted,
+                    l2_regularization=self.l2_regularization,
                 )
             elif self.method == "gd":
                 coeffs = lstsq_l1reg_constrained(

@@ -6,20 +6,31 @@ from types import SimpleNamespace
 
 
 def lstsq_constrained(
-    A: torch.Tensor, b: torch.Tensor, M: torch.Tensor, v: torch.Tensor
+    A: torch.Tensor,
+    b: torch.Tensor,
+    M: torch.Tensor,
+    v: torch.Tensor,
+    l2_regularization: float = 0.0,
 ) -> torch.Tensor:
     """Least-squares minimization with linear constraint.
 
-    Minimize `norm(A @ x - b)` subject to `M @ x = v`, where the `norm` is the L2 norm.
-    This assumes that `M` is full rank.
+    Minimize `norm(A @ x - b) ** 2` subject to `M @ x = v`, where the `norm` is the L2
+    norm. This assumes that `M` is full rank.
 
-    Based on https://gist.github.com/fabianp/915461 (which in turn is based on the Golub
-    & van Loan book).
+    Based on solving system expanded with Lagrange multiplier (see Boyd and
+    Vandenberghe, 2004, section 10.1.1).
+
+    If `l2_regularization` is non-zero, an L2 regularizer is used, i.e.,
+
+        l2_regularization * norm(x) ** 2
+
+    is added to the objective.
 
     :param A: matrix involved in minimization, `min(norm(A @ x - b))`
     :param b: vector involved in minimization, `min(norm(A @ x - b))`
     :param M: matrix involved in the constraint, `M @ x = v`
     :param v: vector involved in the constraint, `M @ x = v`
+    :param l2_regularization: amount of L2 regularization
     :return: the solution
     """
     # check dimensions
@@ -30,24 +41,18 @@ def lstsq_constrained(
     assert v.shape[0] == m
     assert m <= n
 
-    # Q, R = torch.linalg.qr(M.T, mode="complete")
-    # ystar = torch.linalg.solve_triangular(R[:m].T, v, upper=False)
+    # if l2_regularization != 0:
+    #     # easiest way to impose this: extend A and b
+    #     A = torch.vstack((A, l2_regularization * torch.eye(n, dtype=A.dtype)))
+    #     b = torch.vstack((b, torch.zeros((n, 1), dtype=b.dtype)))
 
-    # # XXX should check that there was a solution
-
-    # Atilde = A @ Q[:, m:]
-    # x0star = Q[:, :m] @ ystar
-    # btilde = b - A @ x0star
-
-    # results = torch.linalg.lstsq(Atilde, btilde)
-    # zstar = results.solution
-
-    # # XXX should check that there was a solution
-    # # XXX should report whether the solution was unique?
-
-    # xstar = x0star + Q[:, m:] @ zstar
-
-    top_row = torch.hstack((A.T @ A, M.T))
+    # regularization amounts to adding stacking an identity under A and zeros under b
+    # this in terms comes down to adding a term proportional to the identity in the
+    # lower-left corner of extended_A below
+    ATA = A.T @ A
+    if l2_regularization != 0:
+        ATA += l2_regularization * torch.eye(n, dtype=ATA.dtype)
+    top_row = torch.hstack((ATA, M.T))
     zero = torch.zeros(len(M), len(M), dtype=M.dtype)
     bottom_row = torch.hstack((M, zero))
     extended_A = torch.vstack((top_row, bottom_row))
