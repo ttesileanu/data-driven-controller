@@ -69,7 +69,8 @@ controller = DDController(
     seed_length=2,
     averaging_factor=2.0,
     control_horizon=control_horizon,
-    noise_handling="average",
+    noise_handling="none",
+    l2_regularization=0.1,
     output_cost=1,
 )
 
