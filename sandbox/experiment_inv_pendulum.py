@@ -25,19 +25,20 @@ from ddc import DDController
 
 # %%
 torch.manual_seed(42)
-control_horizon = 6
+control_horizon = 4
 controller = DDController(
     1,
     1,
     seed_length=4,
     averaging_factor=2.0,
     control_horizon=control_horizon,
-    noise_handling="average",
+    noise_handling="none",
+    l2_regularization=0.5,
     noise_strength=0.02,
-    output_cost=250.0,
+    output_cost=25.0,
 )
 
-n_steps = 2500
+n_steps = 1250
 dt = 0.01
 
 # initial state
@@ -63,7 +64,7 @@ controls = torch.stack(controller.history.controls)
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
     axs[0].set_title("Short horizon, online")
 
-    yl = (outputs.min(), outputs.max())
+    yl = (min(outputs.min(), 0), max(outputs.max(), 0))
     axs[0].axhline(0, c="gray", ls=":", lw=1.0)
     axs[0].fill_betweenx(
         yl,
@@ -79,7 +80,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
     axs[0].set_ylabel("angle")
     # axs[0].legend(frameon=False)
 
-    yl = (controls.min(), controls.max())
+    yl = (min(controls.min(), 0), max(controls.max(), 0))
     axs[1].axhline(0, c="gray", ls=":", lw=1.0)
     axs[1].fill_betweenx(
         yl,
@@ -107,7 +108,8 @@ controller = DDController(
     seed_length=4,
     averaging_factor=3.0,
     control_horizon=control_horizon,
-    noise_handling="average",
+    noise_handling="none",
+    l2_regularization=0.1,
     output_cost=100.0,
     offline=True,
 )
@@ -182,7 +184,8 @@ controller = DDController(
     seed_length=4,
     averaging_factor=3.0,
     control_horizon=control_horizon,
-    noise_handling="svd",
+    noise_handling="none",
+    l2_regularization=0.1,
     output_cost=100.0,
 )
 
@@ -256,7 +259,8 @@ controller = DDController(
     seed_length=4,
     averaging_factor=3.0,
     control_horizon=control_horizon,
-    noise_handling="average",
+    noise_handling="none",
+    l2_regularization=1.0,
     output_cost=100.0,
     offline=True,
 )
