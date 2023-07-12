@@ -5,8 +5,6 @@ from types import SimpleNamespace
 
 from .solvers import lstsq_constrained, lstsq_l1reg_constrained
 
-# TODO: affine system?
-
 
 class DDController:
     def __init__(
@@ -31,6 +29,7 @@ class DDController:
         noise_strength: float = 0.02,
         noise_policy: str = "online",
         l2_regularization: float = 0.0,
+        affine: bool = False,
     ):
         """Data-driven controller.
 
@@ -153,11 +152,16 @@ class DDController:
             "always":   online, offline, and warm-up
             "online":   only during online and warm-up
         :param l2_regularization: amount of L2 regularization to add
+        :param affine: if true, the system to be controlled is assumed to have an affine
+            term; in practice, this means that the minimal history length needs to be
+            slightly longer because the coefficient vector `alpha` is constrained to sum
+            to 1
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
         self.seed_length = seed_length
         self.control_horizon = control_horizon
+        self.affine = affine
 
         if state_dim is None:
             self.state_dim = self.observation_dim * self.seed_length
@@ -340,11 +344,19 @@ class DDController:
         Yini = Y[: p * d]
         Ypred = Y[p * d :]
         Upred = U[p * c :]
-        Z = torch.vstack((Uini, Yini, Ypred, Upred))
+        if not self.affine:
+            Z = torch.vstack((Uini, Yini, Ypred, Upred))
+            matchdim = p * (c + d)
+        else:
+            affine_cons = torch.ones((1, n), dtype=dtype)
+            Z = torch.vstack((affine_cons, Uini, Yini, Ypred, Upred))
+            matchdim = p * (c + d) + 1
 
         # reduce if needed
         if self.noise_handling != "none":
             n_columns = l * c + self.state_dim * (c + 1)
+            if self.affine:
+                n_columns += c
             if n < n_columns:
                 raise ValueError(f"history too short for {self.noise_handling}.")
 
@@ -376,14 +388,15 @@ class DDController:
 
         out_coeff = self.output_cost**0.5
         ctrl_coeff = self.control_cost**0.5
-        matchdim = p * (c + d)
         Z_weighted[matchdim : matchdim + h * d] *= out_coeff
         Z_weighted[-h * c :] *= ctrl_coeff
 
         # handle seed slack cost, if any
         if self.seed_slack_cost > 0:
-            Z_weighted[p * c : p * (c + d)] *= self.seed_slack_cost
             matchdim = p * c
+            if self.affine:
+                matchdim += 1
+            Z_weighted[matchdim : matchdim + p * d] *= self.seed_slack_cost
 
         Zm = Z[:matchdim]
         Zp = Z[matchdim:]
@@ -448,17 +461,24 @@ class DDController:
         yini = y[: p * d]
         ypred = y[p * d :]
         upred = u[p * c :]
-        z = torch.vstack((uini, yini, ypred, upred))
+        if not self.affine:
+            z = torch.vstack((uini, yini, ypred, upred))
+            matchdim = p * (c + d)
+        else:
+            z = torch.vstack(
+                (torch.ones((1, 1), dtype=dtype), uini, yini, ypred, upred)
+            )
+            matchdim = p * (c + d) + 1
 
         # weigh using the appropriate coefficients
         z_weighted = z.clone()
 
         # handle seed slack cost, if any
         if self.seed_slack_cost > 0:
-            z_weighted[p * c : p * (c + d)] *= self.seed_slack_cost
             matchdim = p * c
-        else:
-            matchdim = p * (c + d)
+            if self.affine:
+                matchdim += 1
+            z_weighted[matchdim : matchdim + p * d] *= self.seed_slack_cost
 
         zm = z[:matchdim]
         zp = z[matchdim:]
@@ -497,4 +517,7 @@ class DDController:
         c = self.control_dim
         n = self.state_dim
 
-        return (c + 1) * (n + l) - 1
+        T = (c + 1) * (n + l) - 1
+        if self.affine:
+            T += c
+        return T
