@@ -30,6 +30,8 @@ class DDController:
         noise_policy: str = "online",
         l2_regularization: float = 0.0,
         affine: bool = False,
+        clip_control: Tuple[Optional[float], Optional[float]] = (None, None),
+        relative_noise: bool = True,
     ):
         """Data-driven controller.
 
@@ -156,6 +158,11 @@ class DDController:
             term; in practice, this means that the minimal history length needs to be
             slightly longer because the coefficient vector `alpha` is constrained to sum
             to 1
+        :param clip_control: range to clip control values predicted by `plan()`,
+            `(low, high)`; `None` means do not clip in that direction; this is done
+            *before* adding noise, so the actual outputs can fall outside this range
+        :param relative_noise: if true, the noise is relative to the magnitude of the
+            observations; otherwise it is absolute
         """
         self.observation_dim = observation_dim
         self.control_dim = control_dim
@@ -187,6 +194,8 @@ class DDController:
         self.noise_strength = noise_strength
         self.noise_policy = noise_policy
         self.l2_regularization = l2_regularization
+        self.clip_control = clip_control
+        self.relative_noise = relative_noise
 
         if self.l2_regularization != 0.0 and self.method != "lstsq":
             raise ValueError("l2_regularization only works with `method=lstsq`")
@@ -288,6 +297,10 @@ class DDController:
         else:
             control_plan_prenoise = torch.zeros((h, c), dtype=dtype)
 
+        if not all(_ is None for _ in self.clip_control):
+            control_plan_prenoise = torch.clip(
+                control_plan_prenoise, *self.clip_control
+            )
         self.history.controls_prenoise.append(control_plan_prenoise[0])
 
         have_noise = self.noise_strength > 0
@@ -299,7 +312,10 @@ class DDController:
             eps = self.noise_strength * (
                 2 * torch.rand(control_plan_prenoise.shape, dtype=dtype) - 1
             )
-            noise = eps * torch.linalg.norm(last_output)
+            if self.relative_noise:
+                noise = eps * torch.linalg.norm(last_output)
+            else:
+                noise = eps
             control_plan = control_plan_prenoise + noise
         else:
             control_plan = control_plan_prenoise
