@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pydove as dv
 
-from ddc import DDController
+from ddc import DeepControl
 from ddc.solvers import lstsq_constrained
 
 # %% [markdown]
@@ -64,15 +64,14 @@ assert (xf - expected_xf).abs().max() < 1e-9
 # %%
 torch.manual_seed(42)
 control_horizon = 4
-controller = DDController(
-    1,
-    1,
-    seed_length=2,
-    averaging_factor=2.0,
-    control_horizon=control_horizon,
-    noise_handling="none",
-    l2_regularization=0.1,
-    output_cost=1,
+controller = DeepControl(
+    control_dim=1,
+    ini_length=2,
+    horizon=control_horizon,
+    l2_regularization=1.0,
+    control_cost=1e-3,
+    noise_strength=0.01,
+    relative_noise=False,
 )
 
 n_steps = 200
@@ -80,17 +79,28 @@ n_steps = 200
 # initial state
 state = 0.0
 
+seed_length = 12
+
+control_snippet = controller.generate_seed(seed_length)
+observation_snippet = torch.zeros((seed_length, 1))
+for k in range(seed_length):
+    observation_snippet[k, 0] = state
+    state = a * state + phi + control_snippet[k]
+
+control_start = len(control_snippet)
+controller.feed(observation_snippet)
+
 for k in range(n_steps):
     # decide on control magnitude
-    controller.feed(torch.tensor([state]))
     control_plan = controller.plan()
 
+    u = control_plan[0]
+    controller.feed(torch.tensor([[state]]))
+
     # run the model
-    state = a * state + phi + control_plan[0].item()
+    state = a * state + phi + u.item()
 
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
+outputs = torch.stack(controller.history.observations)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
 controls = torch.stack(controller.history.controls)
 
@@ -171,34 +181,39 @@ assert (xf - expected_xf).abs().max() < 1e-9
 # %%
 torch.manual_seed(42)
 control_horizon = 4
-controller = DDController(
-    1,
-    1,
-    seed_length=1,
-    averaging_factor=2.0,
-    control_horizon=control_horizon,
-    noise_handling="none",
-    l2_regularization=0.1,
-    output_cost=1,
+controller = DeepControl(
+    control_dim=1,
+    ini_length=1,
+    horizon=control_horizon,
+    l2_regularization=1.0,
+    control_cost=1e-3,
+    noise_strength=0.01,
+    relative_noise=False,
     affine=True,
 )
 
-n_steps = 200
+seed_length = 12
 
-# initial state
-state = 0.0
+control_snippet = controller.generate_seed(seed_length)
+observation_snippet = torch.zeros((seed_length, 1))
+for k in range(seed_length):
+    observation_snippet[k, 0] = state
+    state = a * state + phi + control_snippet[k]
+
+control_start = len(control_snippet)
+controller.feed(observation_snippet)
 
 for k in range(n_steps):
     # decide on control magnitude
-    controller.feed(torch.tensor([state]))
     control_plan = controller.plan()
 
+    u = control_plan[0]
+    controller.feed(torch.tensor([[state]]))
+
     # run the model
-    state = a * state + phi + control_plan[0].item()
+    state = a * state + phi + u.item()
 
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
+outputs = torch.stack(controller.history.observations)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
 controls = torch.stack(controller.history.controls)
 

@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pydove as dv
 
-from ddc import LinearSystem, DDController
+from ddc import LinearSystem, DeepControl
 
 # %% [markdown]
 # ## Noiseless
@@ -29,25 +29,29 @@ model = LinearSystem(
     control=torch.tensor([[1.0]]),
     initial_state=torch.tensor([[1.0]]),
 ).convert_type(torch.float64)
-controller = DDController(1, 1, control_horizon=4)
+controller = DeepControl(control_dim=1, horizon=10)
 
 n_steps = 200
-y = model.observe()[:, 0]
-for k in range(n_steps):
-    controller.feed(y)
+planning_steps = 5
+seed_length = 20
+
+control_snippet = controller.generate_seed(seed_length, torch.float64)
+control_start = len(control_snippet)
+for k in range(n_steps // planning_steps):
+    observation_snippet = model.run(control_plan=control_snippet)
+
+    controller.feed(observation_snippet)
     control_plan = controller.plan()
-    y = model.run(control_plan=control_plan[[0]])
-    y = y[0, :, 0]
 
-control_start = controller.history_length
+    control_snippet = control_plan[:planning_steps]
 
-outputs = torch.stack(controller.history.outputs)
+observations = torch.stack(controller.history.observations)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
 controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    yl = (outputs.min(), outputs.max())
+    yl = (observations.min(), observations.max())
     axs[0].fill_betweenx(
         yl,
         [0, 0],
@@ -55,9 +59,9 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
         color="gray",
         alpha=0.5,
         edgecolor="none",
-        label="no control",
+        label="seed",
     )
-    axs[0].plot(outputs.squeeze())
+    axs[0].plot(observations.squeeze())
     axs[0].set_xlabel("time")
     axs[0].set_ylabel("observation")
     axs[0].legend(frameon=False)
@@ -70,7 +74,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
         color="gray",
         alpha=0.5,
         edgecolor="none",
-        label="no control",
+        label="seed",
     )
     axs[1].plot(controls.squeeze())
     axs[1].set_xlabel("time")
@@ -78,66 +82,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
     axs[1].legend(frameon=False, loc="lower right")
 
 # %% [markdown]
-# ## With observation noise, naive controller
-
-# %%
-torch.manual_seed(42)
-model = LinearSystem(
-    evolution=torch.tensor([[1.1]]),
-    control=torch.tensor([[1.0]]),
-    initial_state=torch.tensor([[1.0]]),
-    observation_noise=torch.tensor([[0.01]]),
-).convert_type(torch.float64)
-controller = DDController(1, 1, control_horizon=4, averaging_factor=2.0)
-
-n_steps = 200
-y = model.observe()[:, 0]
-for k in range(n_steps):
-    controller.feed(y)
-    control_plan = controller.plan()
-    y = model.run(control_plan=control_plan[[0]])
-    y = y[0, :, 0]
-
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
-controls_prenoise = torch.stack(controller.history.controls_prenoise)
-controls = torch.stack(controller.history.controls)
-
-# %%
-with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    yl = (outputs.min(), outputs.max())
-    axs[0].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[0].plot(outputs.squeeze())
-    axs[0].set_xlabel("time")
-    axs[0].set_ylabel("observation")
-    axs[0].legend(frameon=False)
-
-    yl = (controls.min(), controls.max())
-    axs[1].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[1].plot(controls.squeeze())
-    axs[1].set_xlabel("time")
-    axs[1].set_ylabel("control")
-    axs[1].legend(frameon=False, loc="lower right")
-
-# %% [markdown]
-# ## With observation noise, averaging controller, no seed slack
+# ## With observation noise, offline
 
 # %%
 torch.manual_seed(42)
@@ -147,30 +92,29 @@ model = LinearSystem(
     initial_state=torch.tensor([[1.0]]),
     observation_noise=torch.tensor([[0.1]]),
 ).convert_type(torch.float64)
-history_length = 25
-control_horizon = 4
-controller = DDController(
-    1, 1, control_horizon=4, noise_handling="average", averaging_factor=4.0
-)
+controller = DeepControl(control_dim=1, horizon=15, l2_regularization=2.0, online=False)
 
-n_steps = 300
-control = torch.tensor([0.0], dtype=model.evolution.dtype)
-y = model.observe()[:, 0]
-for k in range(n_steps):
-    controller.feed(y)
+n_steps = 1000
+planning_steps = 4
+seed_length = 40
+
+control_snippet = controller.generate_seed(seed_length, torch.float64)
+control_start = len(control_snippet)
+for k in range(n_steps // planning_steps):
+    observation_snippet = model.run(control_plan=control_snippet)
+
+    controller.feed(observation_snippet)
     control_plan = controller.plan()
-    y = model.run(control_plan=control_plan[[0]])
-    y = y[0, :, 0]
 
-control_start = controller.history_length
+    control_snippet = control_plan[:planning_steps]
 
-outputs = torch.stack(controller.history.outputs)
+observations = torch.stack(controller.history.observations)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
 controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    yl = (outputs.min(), outputs.max())
+    yl = (observations.min(), observations.max())
     axs[0].fill_betweenx(
         yl,
         [0, 0],
@@ -178,9 +122,9 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
         color="gray",
         alpha=0.5,
         edgecolor="none",
-        label="no control",
+        label="seed",
     )
-    axs[0].plot(outputs.squeeze())
+    axs[0].plot(observations.squeeze())
     axs[0].set_xlabel("time")
     axs[0].set_ylabel("observation")
     axs[0].legend(frameon=False)
@@ -193,7 +137,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
         color="gray",
         alpha=0.5,
         edgecolor="none",
-        label="no control",
+        label="seed",
     )
     axs[1].plot(controls.squeeze())
     axs[1].set_xlabel("time")
@@ -201,7 +145,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
     axs[1].legend(frameon=False, loc="lower right")
 
 # %% [markdown]
-# ## With observation noise, averaging controller, with seed slack
+# ## With observation noise, online
 
 # %%
 torch.manual_seed(42)
@@ -211,35 +155,31 @@ model = LinearSystem(
     initial_state=torch.tensor([[1.0]]),
     observation_noise=torch.tensor([[0.1]]),
 ).convert_type(torch.float64)
-history_length = 25
-control_horizon = 4
-controller = DDController(
-    1,
-    1,
-    control_horizon=4,
-    noise_handling="average",
-    averaging_factor=4.0,
-    seed_slack_cost=25.0,
+controller = DeepControl(
+    control_dim=1, horizon=15, l2_regularization=2.0, online=True, control_cost=0.1
 )
 
-n_steps = 300
-control = torch.tensor([0.0], dtype=model.evolution.dtype)
-y = model.observe()[:, 0]
-for k in range(n_steps):
-    controller.feed(y)
+n_steps = 1000
+planning_steps = 4
+seed_length = 40
+
+control_snippet = controller.generate_seed(seed_length, torch.float64)
+control_start = len(control_snippet)
+for k in range(n_steps // planning_steps):
+    observation_snippet = model.run(control_plan=control_snippet)
+
+    controller.feed(observation_snippet)
     control_plan = controller.plan()
-    y = model.run(control_plan=control_plan[[0]])
-    y = y[0, :, 0]
 
-control_start = controller.history_length
+    control_snippet = control_plan[:planning_steps]
 
-outputs = torch.stack(controller.history.outputs)
+observations = torch.stack(controller.history.observations)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
 controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    yl = (outputs.min(), outputs.max())
+    yl = (observations.min(), observations.max())
     axs[0].fill_betweenx(
         yl,
         [0, 0],
@@ -247,9 +187,9 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
         color="gray",
         alpha=0.5,
         edgecolor="none",
-        label="no control",
+        label="seed",
     )
-    axs[0].plot(outputs.squeeze())
+    axs[0].plot(observations.squeeze())
     axs[0].set_xlabel("time")
     axs[0].set_ylabel("observation")
     axs[0].legend(frameon=False)
@@ -262,209 +202,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
         color="gray",
         alpha=0.5,
         edgecolor="none",
-        label="no control",
-    )
-    axs[1].plot(controls.squeeze())
-    axs[1].set_xlabel("time")
-    axs[1].set_ylabel("control")
-    axs[1].legend(frameon=False, loc="lower right")
-
-# %% [markdown]
-# ## With observation noise, SVD controller, no seed slack
-
-# %%
-torch.manual_seed(42)
-model = LinearSystem(
-    evolution=torch.tensor([[1.1]]),
-    control=torch.tensor([[1.0]]),
-    initial_state=torch.tensor([[1.0]]),
-    observation_noise=torch.tensor([[0.1]]),
-).convert_type(torch.float64)
-history_length = 25
-control_horizon = 4
-controller = DDController(
-    1, 1, control_horizon=4, noise_handling="svd", averaging_factor=4.0
-)
-
-n_steps = 300
-control = torch.tensor([0.0], dtype=model.evolution.dtype)
-y = model.observe()[:, 0]
-for k in range(n_steps):
-    controller.feed(y)
-    control_plan = controller.plan()
-    y = model.run(control_plan=control_plan[[0]])
-    y = y[0, :, 0]
-
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
-controls_prenoise = torch.stack(controller.history.controls_prenoise)
-controls = torch.stack(controller.history.controls)
-
-# %%
-with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    yl = (outputs.min(), outputs.max())
-    axs[0].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[0].plot(outputs.squeeze())
-    axs[0].set_xlabel("time")
-    axs[0].set_ylabel("observation")
-    axs[0].legend(frameon=False)
-
-    yl = (controls.min(), controls.max())
-    axs[1].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[1].plot(controls.squeeze())
-    axs[1].set_xlabel("time")
-    axs[1].set_ylabel("control")
-    axs[1].legend(frameon=False, loc="lower right")
-
-# %% [markdown]
-# ## With observation noise, SVD controller, with seed slack
-
-# %%
-torch.manual_seed(42)
-model = LinearSystem(
-    evolution=torch.tensor([[1.1]]),
-    control=torch.tensor([[1.0]]),
-    initial_state=torch.tensor([[1.0]]),
-    observation_noise=torch.tensor([[0.1]]),
-).convert_type(torch.float64)
-history_length = 25
-control_horizon = 4
-controller = DDController(
-    1,
-    1,
-    control_horizon=4,
-    noise_handling="svd",
-    averaging_factor=4.0,
-    seed_slack_cost=25.0,
-)
-
-n_steps = 300
-control = torch.tensor([0.0], dtype=model.evolution.dtype)
-y = model.observe()[:, 0]
-for k in range(n_steps):
-    controller.feed(y)
-    control_plan = controller.plan()
-    y = model.run(control_plan=control_plan[[0]])
-    y = y[0, :, 0]
-
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
-controls_prenoise = torch.stack(controller.history.controls_prenoise)
-controls = torch.stack(controller.history.controls)
-
-# %%
-with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    yl = (outputs.min(), outputs.max())
-    axs[0].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[0].plot(outputs.squeeze())
-    axs[0].set_xlabel("time")
-    axs[0].set_ylabel("observation")
-    axs[0].legend(frameon=False)
-
-    yl = (controls.min(), controls.max())
-    axs[1].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[1].plot(controls.squeeze())
-    axs[1].set_xlabel("time")
-    axs[1].set_ylabel("control")
-    axs[1].legend(frameon=False, loc="lower right")
-
-# %% [markdown]
-# ## With observation noise, no-averaging controller, with L2 regularization
-
-# %%
-torch.manual_seed(42)
-model = LinearSystem(
-    evolution=torch.tensor([[1.1]]),
-    control=torch.tensor([[1.0]]),
-    initial_state=torch.tensor([[1.0]]),
-    observation_noise=torch.tensor([[0.1]]),
-).convert_type(torch.float64)
-history_length = 25
-control_horizon = 4
-controller = DDController(
-    1,
-    1,
-    control_horizon=4,
-    noise_handling="none",
-    averaging_factor=2.0,
-    l2_regularization=10.0,
-)
-
-n_steps = 300
-control = torch.tensor([0.0], dtype=model.evolution.dtype)
-y = model.observe()[:, 0]
-for k in range(n_steps):
-    controller.feed(y)
-    control_plan = controller.plan()
-    y = model.run(control_plan=control_plan[[0]])
-    y = y[0, :, 0]
-
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
-controls_prenoise = torch.stack(controller.history.controls_prenoise)
-controls = torch.stack(controller.history.controls)
-
-# %%
-with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    yl = (outputs.min(), outputs.max())
-    axs[0].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[0].plot(outputs.squeeze())
-    axs[0].set_xlabel("time")
-    axs[0].set_ylabel("observation")
-    axs[0].legend(frameon=False)
-
-    yl = (controls.min(), controls.max())
-    axs[1].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
+        label="seed",
     )
     axs[1].plot(controls.squeeze())
     axs[1].set_xlabel("time")

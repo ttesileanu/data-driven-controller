@@ -101,7 +101,8 @@ class LinearSystem:
         self,
         n_steps: Optional[int] = None,
         control_plan: Optional[torch.Tensor] = None,
-        store_initial: bool = False,
+        store_initial: bool = True,
+        store_final: bool = False,
     ) -> torch.Tensor:
         """Run the dynamical system for a number of steps.
 
@@ -123,12 +124,16 @@ class LinearSystem:
         :param control_plan: control inputs to be provided to the system; should have
             shape `(n, control_dim)` or `(n, control_dim, batch_size); in the former
             case, if `batch_size > 1`, the same control is used for all samples
-        :param store_initial: whether to store the initial state of the system, before
-            any dynamics steps, or only store the subsequent evolution
+        :param store_initial: whether to store the initial observation from the system,
+            before any dynamics steps, or only store the subsequent evolution
+        :param store_final: whether to store a final observation from the system, after
+            all the dynamics steps
         :return: the system observations, with shape `(n_out, observation_dim,
-            batch_size)`, where `n_out` can be `n` (if `store_initial` is false) or
-            `n + 1` (if `store_initial` is true)
+            batch_size)`, where `n_out` can be `n` (if `store_initial` or `store_final`,
+            but not both, are false); `n + 1` (if both `store_initial` and `store_final`
+            are true); or `n - 1` (if both `store_initial` and `store_final` are false)
         """
+        output_batch = True
         if control_plan is not None:
             assert control_plan.ndim in [2, 3]
             if n_steps is not None:
@@ -137,13 +142,14 @@ class LinearSystem:
                 n_steps = control_plan.shape[0]
 
             if control_plan.ndim < 3:
+                output_batch = self.batch_size != 1
                 control_plan = torch.tile(control_plan[..., None], (self.batch_size,))
             assert control_plan.ndim == 3
             assert control_plan.shape[-1] == self.batch_size
 
             assert control_plan.shape[1] == self.control_dim
 
-        n_out = n_steps + store_initial
+        n_out = n_steps - 1 + store_initial + store_final
         observations = torch.empty(
             n_out, self.observation_dim, self.batch_size, dtype=self.state.dtype
         )
@@ -162,8 +168,12 @@ class LinearSystem:
             self.state = x
 
             # observe
-            observations[i + store_initial] = self.observe()
+            if i < n_steps - 1 or store_final:
+                observations[i + store_initial] = self.observe()
 
+        if not output_batch:
+            assert observations.shape[-1] == 1
+            observations = observations[..., 0]
         return observations
 
     def observe(self) -> torch.Tensor:

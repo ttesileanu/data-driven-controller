@@ -47,7 +47,7 @@ def lstsq_constrained(
     #     b = torch.vstack((b, torch.zeros((n, 1), dtype=b.dtype)))
 
     # regularization amounts to adding stacking an identity under A and zeros under b
-    # this in terms comes down to adding a term proportional to the identity in the
+    # this in turn comes down to adding a term proportional to the identity in the
     # lower-left corner of extended_A below
     ATA = A.T @ A
     if l2_regularization != 0:
