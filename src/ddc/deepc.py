@@ -22,6 +22,7 @@ class DeepControl:
         control_cost: float = 1.0,
         l2_regularization: float = 1e-3,
         control_norm_clip: Optional[float] = None,
+        seed_noise_norm: float = 1.0,
         noise_strength: Optional[float] = None,
         relative_noise: bool = False,
         online: bool = True,
@@ -36,6 +37,7 @@ class DeepControl:
         self.control_cost = control_cost
         self.l2_regularization = l2_regularization
         self.control_norm_clip = control_norm_clip
+        self.seed_noise_norm = seed_noise_norm
 
         self.relative_noise = relative_noise
         self.online = online
@@ -65,7 +67,7 @@ class DeepControl:
         # XXX should probably do uniform density inside the unit sphere
         seed = torch.normal(torch.zeros(n, self.control_dim, dtype=dtype), 1.0)
 
-        scaling = 1.0 if self.control_norm_clip is None else self.control_norm_clip
+        scaling = self.seed_noise_norm
         seed_norm = seed / torch.linalg.norm(seed, dim=1)[:, None]
         norms = scaling * torch.rand(size=(n, 1), dtype=dtype)
         seed = seed_norm * norms
