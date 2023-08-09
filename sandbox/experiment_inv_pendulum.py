@@ -18,10 +18,30 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pydove as dv
 
-from ddc import DeepControl
+from ddc import GeneralSystem, DeepControl
 
 # %% [markdown]
-# ## Try the controller offline
+# ## Define the system
+
+
+class InvertedPendulum(GeneralSystem):
+    def __init__(self, dt: float, w0: float = 1.0, observation=None, **kwargs):
+        self.dt = dt
+        self.w0 = w0
+
+        evolution = lambda state: torch.tensor(
+            [
+                state[0] + self.dt * state[1],
+                state[1] + self.dt * self.w0**2 * torch.sin(state[0]),
+            ],
+            dtype=self.dtype,
+        )
+        control = lambda u: torch.tensor([0.0, self.dt * u], dtype=self.dtype)
+        super().__init__(evolution, control, observation, state_dim=2, **kwargs)
+
+
+# %% [markdown]
+# ## Try the controller
 
 # %%
 torch.manual_seed(41)
@@ -40,23 +60,19 @@ n_steps = 200
 dt = 0.01
 
 # initial state
-phi = 3.1
-omega = 0.0
+model = InvertedPendulum(
+    dt=dt,
+    observation=lambda state: state[[0]],
+    initial_state=torch.tensor([3.1, 0.0], dtype=torch.float64),
+)
 
 planning_steps = 5
 seed_length = 120
 
-control_snippet = controller.generate_seed(seed_length, torch.float64)
+control_snippet = controller.generate_seed(seed_length, model.dtype)
 control_start = len(control_snippet)
 for k in range(n_steps // planning_steps):
-    observation_snippet = torch.zeros_like(control_snippet)
-    for i in range(len(control_snippet)):
-        observation_snippet[i, 0] = phi
-
-        # run the model
-        u = control_snippet[i].item()
-        omega += dt * (np.sin(phi) + u)
-        phi += dt * omega
+    observation_snippet = model.run(control_plan=control_snippet)
 
     controller.feed(observation_snippet)
     control_plan = controller.plan()
