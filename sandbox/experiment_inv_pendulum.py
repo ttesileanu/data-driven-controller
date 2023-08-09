@@ -18,54 +18,58 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pydove as dv
 
-from ddc import DDController
+from ddc import DeepControl
 
 # %% [markdown]
-# ## Short horizon, online
+# ## Try the controller offline
 
 # %%
-torch.manual_seed(42)
-control_horizon = 4
-controller = DDController(
-    1,
-    1,
-    seed_length=2,
-    averaging_factor=2.0,
-    control_horizon=control_horizon,
-    noise_handling="none",
-    l2_regularization=1.0,
-    noise_strength=0.02,
-    output_cost=250.0,
+torch.manual_seed(41)
+control_horizon = 16
+controller = DeepControl(
+    control_dim=1,
+    ini_length=2,
+    horizon=control_horizon,
+    l2_regularization=1e-4,
+    control_cost=1e-5,
+    seed_noise_norm=1.0,
     affine=True,
 )
 
-n_steps = 1250
+n_steps = 200
 dt = 0.01
 
 # initial state
-phi = 3.0
+phi = 3.1
 omega = 0.0
 
-for k in range(n_steps):
-    # decide on control magnitude
-    controller.feed(torch.tensor([phi]))
+planning_steps = 5
+seed_length = 120
+
+control_snippet = controller.generate_seed(seed_length, torch.float64)
+control_start = len(control_snippet)
+for k in range(n_steps // planning_steps):
+    observation_snippet = torch.zeros_like(control_snippet)
+    for i in range(len(control_snippet)):
+        observation_snippet[i, 0] = phi
+
+        # run the model
+        u = control_snippet[i].item()
+        omega += dt * (np.sin(phi) + u)
+        phi += dt * omega
+
+    controller.feed(observation_snippet)
     control_plan = controller.plan()
 
-    # run the model
-    omega += dt * (np.sin(phi) + control_plan[0].item())
-    phi += dt * omega
+    control_snippet = control_plan[:planning_steps]
 
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
+observations = torch.stack(controller.history.observations)
 controls_prenoise = torch.stack(controller.history.controls_prenoise)
 controls = torch.stack(controller.history.controls)
 
 # %%
 with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    axs[0].set_title("Short horizon, online")
-
-    yl = (min(outputs.min(), 0), max(outputs.max(), 0))
+    yl = (min(observations.min(), 0), max(observations.max(), 0))
     axs[0].axhline(0, c="gray", ls=":", lw=1.0)
     axs[0].fill_betweenx(
         yl,
@@ -74,9 +78,9 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
         color="gray",
         alpha=0.5,
         edgecolor="none",
-        label="no control",
+        label="seed",
     )
-    axs[0].plot(outputs.squeeze(), lw=1.0)
+    axs[0].plot(observations.squeeze(), lw=1.0)
     axs[0].set_xlabel("time")
     axs[0].set_ylabel("angle")
     # axs[0].legend(frameon=False)
@@ -90,236 +94,7 @@ with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
         color="gray",
         alpha=0.5,
         edgecolor="none",
-        label="no control",
-    )
-    axs[1].plot(controls.squeeze(), lw=1.0)
-    axs[1].set_xlabel("time")
-    axs[1].set_ylabel("control")
-    # axs[1].legend(frameon=False, loc="lower right")
-
-# %% [markdown]
-# ## Short horizon, offline
-
-# %%
-torch.manual_seed(42)
-control_horizon = 6
-controller = DDController(
-    1,
-    1,
-    seed_length=4,
-    averaging_factor=3.0,
-    control_horizon=control_horizon,
-    noise_handling="none",
-    l2_regularization=0.1,
-    output_cost=250.0,
-    offline=True,
-)
-
-n_steps = 1200
-dt = 0.05
-
-# initial state
-phi = 3.0
-omega = 0.0
-
-for k in range(n_steps):
-    # decide on control magnitude
-    controller.feed(torch.tensor([phi]))
-    control_plan = controller.plan()
-
-    # run the model
-    omega += dt * (np.sin(phi) + control_plan[0].item())
-    phi += dt * omega
-
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
-controls_prenoise = torch.stack(controller.history.controls_prenoise)
-controls = torch.stack(controller.history.controls)
-
-# %%
-with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    axs[0].set_title("Short horizon, offline")
-
-    yl = (outputs.min(), outputs.max())
-    axs[0].axhline(0, c="gray", ls=":", lw=1.0)
-    axs[0].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[0].plot(outputs.squeeze(), lw=1.0)
-    axs[0].set_xlabel("time")
-    axs[0].set_ylabel("angle")
-    # axs[0].legend(frameon=False)
-
-    yl = (controls.min(), controls.max())
-    axs[1].axhline(0, c="gray", ls=":", lw=1.0)
-    axs[1].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[1].plot(controls.squeeze(), lw=1.0)
-    axs[1].set_xlabel("time")
-    axs[1].set_ylabel("control")
-    # axs[1].legend(frameon=False, loc="lower right")
-
-# %% [markdown]
-# ## Long horizon, online
-
-# %%
-torch.manual_seed(42)
-control_horizon = 10
-controller = DDController(
-    1,
-    1,
-    seed_length=2,
-    averaging_factor=3.0,
-    control_horizon=control_horizon,
-    noise_handling="none",
-    l2_regularization=0.1,
-    output_cost=250.0,
-    affine=True,
-)
-
-n_steps = 1500
-dt = 0.05
-
-# initial state
-phi = 3.0
-omega = 0.0
-
-for k in range(n_steps):
-    # decide on control magnitude
-    controller.feed(torch.tensor([phi]))
-    control_plan = controller.plan()
-
-    # run the model
-    omega += dt * (np.sin(phi) + control_plan[0].item())
-    phi += dt * omega
-
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
-controls_prenoise = torch.stack(controller.history.controls_prenoise)
-controls = torch.stack(controller.history.controls)
-
-# %%
-with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    axs[0].set_title("Long horizon, online")
-
-    yl = (outputs.min(), outputs.max())
-    axs[0].axhline(0, c="gray", ls=":", lw=1.0)
-    axs[0].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[0].plot(outputs.squeeze(), lw=1.0)
-    axs[0].set_xlabel("time")
-    axs[0].set_ylabel("angle")
-    # axs[0].legend(frameon=False)
-
-    yl = (controls.min(), controls.max())
-    axs[1].axhline(0, c="gray", ls=":", lw=1.0)
-    axs[1].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[1].plot(controls.squeeze(), lw=1.0)
-    axs[1].set_xlabel("time")
-    axs[1].set_ylabel("control")
-    # axs[1].legend(frameon=False, loc="lower right")
-
-# %% [markdown]
-# ## Long horizon, offline
-
-# %%
-torch.manual_seed(42)
-control_horizon = 10
-controller = DDController(
-    1,
-    1,
-    seed_length=2,
-    averaging_factor=3.0,
-    control_horizon=control_horizon,
-    noise_handling="none",
-    l2_regularization=1.0,
-    output_cost=250.0,
-    offline=True,
-    affine=True,
-)
-
-n_steps = 1500
-dt = 0.05
-
-# initial state
-phi = 3.0
-omega = 0.0
-
-for k in range(n_steps):
-    # decide on control magnitude
-    controller.feed(torch.tensor([phi]))
-    control_plan = controller.plan()
-
-    # run the model
-    omega += dt * (np.sin(phi) + control_plan[0].item())
-    phi += dt * omega
-
-control_start = controller.history_length
-
-outputs = torch.stack(controller.history.outputs)
-controls_prenoise = torch.stack(controller.history.controls_prenoise)
-controls = torch.stack(controller.history.controls)
-
-# %%
-with dv.FigureManager(2, 1, figsize=(6, 4)) as (_, axs):
-    axs[0].set_title("Long horizon, offline")
-
-    yl = (outputs.min(), outputs.max())
-    axs[0].axhline(0, c="gray", ls=":", lw=1.0)
-    axs[0].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
-    )
-    axs[0].plot(outputs.squeeze(), lw=1.0)
-    axs[0].set_xlabel("time")
-    axs[0].set_ylabel("angle")
-    # axs[0].legend(frameon=False)
-
-    yl = (controls.min(), controls.max())
-    axs[1].axhline(0, c="gray", ls=":", lw=1.0)
-    axs[1].fill_betweenx(
-        yl,
-        [0, 0],
-        2 * [control_start],
-        color="gray",
-        alpha=0.5,
-        edgecolor="none",
-        label="no control",
+        label="seed",
     )
     axs[1].plot(controls.squeeze(), lw=1.0)
     axs[1].set_xlabel("time")
