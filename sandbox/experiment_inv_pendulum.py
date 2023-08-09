@@ -18,13 +18,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pydove as dv
 
-from ddc import GeneralSystem, DeepControl
+from ddc import AffineControlSystem, DeepControl
 
 # %% [markdown]
 # ## Define the system
 
 
-class InvertedPendulum(GeneralSystem):
+class InvertedPendulum(AffineControlSystem):
     def __init__(self, dt: float, w0: float = 1.0, observation=None, **kwargs):
         self.dt = dt
         self.w0 = w0

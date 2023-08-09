@@ -7,9 +7,9 @@ class GeneralSystem:
     def __init__(
         self,
         evolution: Callable,
-        control: Callable,
         observation: Callable = None,
         state_dim: Optional[int] = None,
+        control_dim: Optional[int] = None,
         state_noise: Optional[torch.Tensor] = None,
         observation_noise: Optional[torch.Tensor] = None,
         initial_state: Optional[torch.Tensor] = None,
@@ -20,7 +20,7 @@ class GeneralSystem:
 
         The system obeys
 
-            x[t + 1] = evolution(x[t]) + control(u[t]) + state_noise ,
+            x[t + 1] = evolution(x[t], u[t]) + state_noise ,
             y[t] = observation(x[t]) + observation_noise ,
 
         where `u[t]` is the control signal and `y[t]` are the observations. Note that
@@ -30,11 +30,12 @@ class GeneralSystem:
         the latter case each column of the state vector evolves independently -- this is
         the batch case.
 
-        :param evolution: evolution function
-        :param control: control function
+        :param evolution: evolution function, dependent on current state and control
         :param observation: observation function; default: identity
         :param state_dim: dimensionality of state; inferred from `state_noise` or
             `initial_state` if given
+        :param control_dim: dimensionality of control; if not given, it will be inferred
+            from the first call to `run` that has a `control_plan`
         :param state_noise: covariance matrix for state noise (assumed white); default:
             the zero matrix, i.e., no state noise
         :param observation_noise: covariance matrix for observation noise (assumed
@@ -45,7 +46,6 @@ class GeneralSystem:
             default: use PyTorch's default generator
         """
         self.evolution = evolution
-        self.control = control
 
         self.state_dim = state_dim
         if state_noise is not None:
@@ -59,7 +59,7 @@ class GeneralSystem:
         else:
             self.observation = observation
 
-        self.control_dim = None
+        self.control_dim = control_dim
 
         if state_noise is None:
             self.state_noise = None
@@ -126,7 +126,11 @@ class GeneralSystem:
         tensor).
 
         If the number of steps is provided without a `control_plan`, the function will
-        simulate an autonomous system (i.e., with control set to 0).
+        simulate an autonomous system (i.e., with control set to 0). Specifically, if
+        `self.control_dim` is set, the evolution function will be given a zero tensor of
+        size `(self.control_dim, batch_size)` for the control. Otherwise, a floating
+        point `0.0` will be passed, and the evolution function will need to be able to
+        handle this.
 
         If a `control_plan` is provided, it will set the control inputs received by the
         system. Generally the number of steps can be inferred from the shape of the
@@ -180,14 +184,15 @@ class GeneralSystem:
 
         for i in range(n_steps):
             # evolve
-            x = self.evolution(self.state)
-            assert len(x) == self.state_dim
-
             if control_plan is not None:
-                action = self.control(control_plan[i])
-                assert len(action) == self.state_dim
-
-                x += action
+                action = control_plan[i]
+            else:
+                if self.control_dim is not None:
+                    action = torch.zeros((self.control_dim, self.batch_size))
+                else:
+                    action = 0.0
+            x = self.evolution(self.state, action)
+            assert len(x) == self.state_dim
 
             if self.has_state_noise:
                 x += self._state_gaussian.sample(
@@ -261,3 +266,15 @@ class GeneralSystem:
 
         # promote
         self.convert_type(dtype)
+
+
+class AffineControlSystem(GeneralSystem):
+    def __init__(
+        self,
+        evolution: Callable,
+        control: Callable,
+        observation: Callable = None,
+        **kwargs
+    ):
+        evolution_combined = lambda x, u: evolution(x) + control(u)
+        super().__init__(evolution_combined, observation, **kwargs)
