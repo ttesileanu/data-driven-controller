@@ -8,18 +8,16 @@ channels:
 dependencies:
     - python=3.9
     - pip
-    - pytest
     - numpy
     - scipy
-    - pandas
     - matplotlib
     - seaborn
     - pytorch
-    - scikit-learn
     - tqdm
     - ipykernel
-    - ipywidgets>=7.0,<8.0
     - jupyter
+    - jupytext
      
     - pip:
+        - --editable .
         - pydove
