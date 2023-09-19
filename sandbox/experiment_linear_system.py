@@ -49,7 +49,7 @@ model = LinearSystem(
 observations = model.run(100, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
-    ax.plot(observations.squeeze(), c="k", lw=1.0, alpha=0.04)
+    ax.plot(observations.numpy().squeeze(), c="k", lw=1.0, alpha=0.04)
     ax.set_xlabel("time")
     ax.set_ylabel("observation = state")
 
@@ -66,7 +66,7 @@ model = LinearSystem(
 observations = model.run(100, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
-    ax.plot(observations.squeeze(), c="k", lw=1.0, alpha=0.04)
+    ax.plot(observations.numpy().squeeze(), c="k", lw=1.0, alpha=0.04)
     ax.set_xlabel("time")
     ax.set_ylabel("observation = state")
 
@@ -117,7 +117,7 @@ control_plan = torch.hstack(
 observations = model.run(control_plan=control_plan, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
-    ax.plot(observations.squeeze(), c="C0", lw=1.0, alpha=0.04)
+    ax.plot(observations.numpy().squeeze(), c="C0", lw=1.0, alpha=0.04)
     ax.plot(control_plan.squeeze(), "k", lw=1.0, alpha=0.5, label="control")
     ax.set_xlabel("time")
     ax.set_ylabel("observation = state")
@@ -144,7 +144,7 @@ control_plan = torch.hstack(
 observations = model.run(control_plan=control_plan, store_initial=True)
 
 with dv.FigureManager() as (_, ax):
-    ax.plot(observations.squeeze(), c="C0", lw=1.0, alpha=0.04)
+    ax.plot(observations.numpy().squeeze(), c="C0", lw=1.0, alpha=0.04)
     ax.plot(control_plan.squeeze(), "k", lw=1.0, alpha=0.5, label="control")
     ax.set_xlabel("time")
     ax.set_ylabel("observation = state")

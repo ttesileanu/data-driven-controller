@@ -374,7 +374,7 @@ with dv.FigureManager(3, 1, figsize=(8, 6)) as (_, axs):
             edgecolor="none",
             label="no control",
         )
-        ax.plot(crt_output.squeeze(), lw=1.0)
+        ax.plot(crt_output.numpy().squeeze(), lw=1.0)
         ax.set_xlabel("time")
         ax.set_ylabel(["$\\theta_1$", "$\\theta_2$"][i])
 
@@ -389,7 +389,7 @@ with dv.FigureManager(3, 1, figsize=(8, 6)) as (_, axs):
         edgecolor="none",
         label="no control",
     )
-    axs[-1].plot(controls.squeeze(), lw=1.0)
+    axs[-1].plot(controls.numpy().squeeze(), lw=1.0)
     axs[-1].set_xlabel("time")
     axs[-1].set_ylabel("controls")
 
