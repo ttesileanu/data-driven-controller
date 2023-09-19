@@ -168,6 +168,9 @@ class DeepControl:
             control_norms = torch.linalg.norm(control_plan_prenoise, dim=1)
             mask = control_norms > self.control_norm_clip
             control_plan_prenoise[mask, :] /= control_norms[mask, None]
+            control_plan_prenoise[mask, :] *= self.control_norm_clip
+
+        control_plan_prenoise = control_plan_prenoise.reshape((-1, c))
 
         have_noise = self.noise_strength > 0
         if have_noise:
