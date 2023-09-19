@@ -1,5 +1,5 @@
 # %% [markdown]
-## Experiments with controlling linear systems
+## Experiments with simulating and controlling linear systems
 
 # %%
 # enable autoreload
